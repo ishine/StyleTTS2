@@ -302,7 +302,7 @@ def main(config_path):
             
             if epoch >= TMA_epoch: 
                 optimizer.step('text_aligner')
-                optimizer.step('pitch_extractor')
+                #optimizer.step('pitch_extractor')
             
             iters = iters + 1
             

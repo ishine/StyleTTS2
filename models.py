@@ -697,9 +697,18 @@ def load_checkpoint(model, optimizer, path, load_only_params=True, ignore_module
     state = torch.load(path, map_location='cpu')
     params = state['net']
     for key in model:
+        from collections import OrderedDict
+        new_state_dict = OrderedDict()
+        for k,v in params[key].items(): # Fix for non-distributed training
+            name = 'module.' + k
+            new_state_dict[name] = v
+
+        if key in ['mpd', 'msd', 'wd']:
+            new_state_dict = params[key]
+
         if key in params and key not in ignore_modules:
             print('%s loaded' % key)
-            model[key].load_state_dict(params[key])
+            model[key].load_state_dict(new_state_dict)
     _ = [model[key].eval() for key in model]
     
     if not load_only_params:
