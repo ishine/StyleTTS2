@@ -41,7 +41,8 @@ class TextCleaner:
             try:
                 indexes.append(self.word_index_dictionary[char])
             except KeyError:
-                print(text)
+                pass
+                #print(text)
         return indexes
 
 np.random.seed(1)
@@ -91,6 +92,7 @@ class FilePathDataset(torch.utils.data.Dataset):
         self.mean, self.std = -4, 4
         self.data_augmentation = data_augmentation and (not validation)
         self.max_mel_length = 192
+        self.min_mel_length = 64
         
         self.min_length = min_length
         with open(OOD_data, 'r') as f:
@@ -176,7 +178,7 @@ class Collater(object):
 
     def __init__(self, return_wave=False):
         self.text_pad_index = 0
-        self.min_mel_length = 192
+        self.min_mel_length = 64
         self.max_mel_length = 192
         self.return_wave = return_wave
         
@@ -208,9 +210,18 @@ class Collater(object):
         paths = ['' for _ in range(batch_size)]
         waves = [None for _ in range(batch_size)]
         
+        indices_to_remove = []
         for bid, (label, mel, text, ref_text, ref_mel, ref_label, path, wave) in enumerate(batch):
             mel_size = mel.size(1)
+            if mel_size < self.min_mel_length:
+                print(f"Ignoring | mel_size: {mel_size}, path: {path}")
+                indices_to_remove.append(bid)
+                continue
             text_size = text.size(0)
+            if text_size <= 0:
+                print(f"Ignoring | text_size: {text_size}, path: {path}")
+                indices_to_remove.append(bid)
+                continue
             rtext_size = ref_text.size(0)
             labels[bid] = label
             mels[bid, :, :mel_size] = mel
@@ -226,6 +237,29 @@ class Collater(object):
             ref_labels[bid] = ref_label
             waves[bid] = wave
 
+        # For removing incompatible items from tensor
+        def delete(arr: torch.Tensor, ind: int, dim: int) -> torch.Tensor:
+            skip = [i for i in range(arr.size(dim)) if i != ind]
+            indices = [slice(None) if i != dim else skip for i in range(arr.ndim)]
+            return arr.__getitem__(indices)
+
+        for bid in indices_to_remove:
+            waves.pop(bid)
+            texts = delete(texts, bid, 0)
+            input_lengths = delete(input_lengths, bid, 0)
+            ref_texts = delete(ref_texts, bid, 0)
+            ref_lengths = delete(ref_lengths, bid, 0)
+            mels = delete(mels, bid, 0)
+            output_lengths = delete(output_lengths, bid, 0)
+            ref_mels = delete(ref_mels, bid, 0)
+
+        # This SHOULD work, because all the components of the model should
+        # account for non-standard batch sizes. There shouldn't be anything
+        # hardcoded.
+
+        # We need to actually remove the elements and make sure the entire batch stays coherent.
+
+        print(f"from collater: {input_lengths}")
         return waves, texts, input_lengths, ref_texts, ref_lengths, mels, output_lengths, ref_mels
 
 
