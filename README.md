@@ -10,9 +10,9 @@ Audio samples: [https://styletts2.github.io/](https://styletts2.github.io/)
 
 ## TODO
 - [x] Training and inference demo code for single-speaker models (LJSpeech)
-- [ ] Test training code for multi-speaker models (VCTK and LibriTTS)
-- [ ] Finish demo code for multispeaker model and upload pre-trained models
-- [ ] Add a finetuning script for new speakers with base pre-trained multispeaker models
+- [x] Test training code for multi-speaker models (VCTK and LibriTTS)
+- [x] Finish demo code for multispeaker model and upload pre-trained models
+- [x] Add a finetuning script for new speakers with base pre-trained multispeaker models
 - [ ] Fix DDP (accelerator) for `train_second.py` **(I have tried everything I could to fix this but had no success, so if you are willing to help, please see [#7](https://github.com/yl4579/StyleTTS2/issues/7))**
 
 ## Pre-requisites
@@ -69,12 +69,21 @@ In [Utils](https://github.com/yl4579/StyleTTS2/tree/main/Utils) folder, there ar
 - **Loss becomes NaN**: If it is the first stage, please make sure you do not use mixed precision, as it can cause loss becoming NaN for some particular datasets when the batch size is not set properly (need to be more than 16 to work well). For the second stage, please also experiment with different batch sizes, with higher batch sizes being more likely to cause NaN loss values. We recommend the batch size to be 16. You can refer to issues [#10](https://github.com/yl4579/StyleTTS2/issues/10) and [#11](https://github.com/yl4579/StyleTTS2/issues/11) for more details.
 - **Out of memory**: Please either use lower `batch_size` or `max_len`. You may refer to issue [#10](https://github.com/yl4579/StyleTTS2/issues/10) for more information.
 
+## Finetuning
+The script is modified from `train_second.py` which uses DP, as DDP does not work for `train_second.py`. Please see the bold section above if you are willing to help with this problem. 
+```bash
+python train_finetune.py --config_path ./Configs/config_ft.yml
+```
+Please make sure you have the LibriTTS checkpoint downloaded and unzipped under the folder. The default configuration `config_ft.yml` finetunes on LJSpeech with 1 hour of speech data (around 1k samples) for 50 epochs. This took about 4 hours to finish on four NVidia A100. The quality is slightly worse (similar to NaturalSpeech on LJSpeech) than LJSpeech model trained from scratch with 24 hours of speech data, which took around 2.5 days to finish on four A100. 
+
 ## Inference
-Please refer to [inference.ipynb](https://github.com/yl4579/StyleTTS2/blob/main/Demo/Inference_LJSpeech.ipynb) for details. 
+Please refer to [Inference_LJSpeech.ipynb](https://github.com/yl4579/StyleTTS2/blob/main/Demo/Inference_LJSpeech.ipynb) (single-speaker) and [Inference_LibriTTS.ipynb](https://github.com/yl4579/StyleTTS2/blob/main/Demo/Inference_LibriTTS.ipynb) (multi-speaker) for details. For LibriTTS, you will also need to download [reference_audio.zip](https://drive.google.com/file/d/1YhQO4O4dAsvkMzWZM8nVFMglYyi554YT) and unzip it under the `demo` before running the demo. 
 
-The pretrained StyleTTS 2 on LJSpeech corpus in 24 kHz can be downloaded at [StyleTTS 2 Link](https://drive.google.com/file/d/1K3jt1JEbtohBLUA0X75KLw36TW7U1yxq/view?usp=sharing).
+The pretrained StyleTTS 2 on LJSpeech corpus in 24 kHz can be downloaded at [StyleTTS 2 LJSpeech Link](https://drive.google.com/file/d/1K3jt1JEbtohBLUA0X75KLw36TW7U1yxq/view?usp=sharing).
 
-**The pretrained model on LibriTTS is currently WIP.**
+The pretrained StyleTTS 2 model on LibriTTS can be downloaded at [StyleTTS 2 LibriTTS Link](https://drive.google.com/file/d/1jK_VV3TnGM9dkrIMsdQ_upov8FrIymr7/view).
+
+***Before using these models, you agree to inform the listeners that the speech samples are synthesized by StyleTTS 2 models. Moreover, when using it for voice cloning, you also agree to only use voices whose speakers grant the permission to have their voice cloned, either directly or by license before making synthesized voices pubilc.***
 
 ### Common Issues
 - **High-pitched background noise**: This is caused by numerical float differences in older GPUs. For more details, please refer to issue [#13](https://github.com/yl4579/StyleTTS2/issues/13). Basically, you will need to use more modern GPUs or do inference on CPUs.
