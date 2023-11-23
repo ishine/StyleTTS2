@@ -238,21 +238,21 @@ class Collater(object):
 
         # For removing incompatible items from tensor
         def mult_delete(
-            arr: torch.Tensor, skip_ind: int, dim: int) -> torch.Tensor:
+            arr: torch.Tensor, skip_ind: list, dim: int) -> torch.Tensor:
+            #print(f"prior: {arr.shape}")
             mask = torch.ones(batch_size, dtype=torch.bool)
             mask[skip_ind] = False
             return arr[mask]
 
-        waves = np.delete(waves, indices_to_remove)
-        texts = mult_delete(texts, bid, 0)
-        input_lengths = mult_delete(input_lengths, bid, 0)
-        ref_texts = mult_delete(ref_texts, bid, 0)
-        ref_lengths = mult_delete(ref_lengths, bid, 0)
-        mels = mult_delete(mels, bid, 0)
-        output_lengths = mult_delete(output_lengths, bid, 0)
-        ref_mels = mult_delete(ref_mels, bid, 0)
-
-        # We need to actually remove the elements and make sure the entire batch stays coherent.
+        for bid in sorted(indices_to_remove, reverse=True):
+            del(waves[bid])
+        texts = mult_delete(texts, indices_to_remove, 0)
+        input_lengths = mult_delete(input_lengths, indices_to_remove, 0)
+        ref_texts = mult_delete(ref_texts, indices_to_remove, 0)
+        ref_lengths = mult_delete(ref_lengths, indices_to_remove, 0)
+        mels = mult_delete(mels, indices_to_remove, 0)
+        output_lengths = mult_delete(output_lengths, indices_to_remove, 0)
+        ref_mels = mult_delete(ref_mels, indices_to_remove, 0)
 
         #print(f"from collater: {input_lengths}")
         return waves, texts, input_lengths, ref_texts, ref_lengths, mels, output_lengths, ref_mels
