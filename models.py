@@ -157,6 +157,7 @@ class StyleEncoder(nn.Module):
         self.unshared = nn.Linear(dim_out, style_dim)
 
     def forward(self, x):
+        #print(x.shape)
         h = self.shared(x)
         h = h.view(h.size(0), -1)
         s = self.unshared(h)
@@ -428,6 +429,7 @@ class AdaLayerNorm(nn.Module):
         x = x.transpose(1, -1)
                 
         h = self.fc(s)
+        # Problem is here
         h = h.view(h.size(0), h.size(1), 1)
         gamma, beta = torch.chunk(h, chunks=2, dim=1)
         gamma, beta = gamma.transpose(1, -1), beta.transpose(1, -1)
@@ -466,6 +468,7 @@ class ProsodyPredictor(nn.Module):
 
 
     def forward(self, texts, style, text_lengths, alignment, m):
+        # Problem is here
         d = self.text_encoder(texts, style, text_lengths, m)
         
         batch_size = d.shape[0]
@@ -547,6 +550,7 @@ class DurationEncoder(nn.Module):
         
         for block in self.lstms:
             if isinstance(block, AdaLayerNorm):
+                # Problem is here
                 x = block(x.transpose(-1, -2), style).transpose(-1, -2)
                 x = torch.cat([x, s.permute(1, -1, 0)], axis=1)
                 x.masked_fill_(masks.unsqueeze(-1).transpose(-1, -2), 0.0)
@@ -700,7 +704,11 @@ def load_checkpoint(model, optimizer, path, load_only_params=True, ignore_module
         from collections import OrderedDict
         new_state_dict = OrderedDict()
         for k,v in params[key].items(): # Fix for non-distributed training
-            name = 'module.' + k
+            if not k.startswith("module"):
+                #print(f"load_checkpoint: {k}")
+                name = 'module.' + k
+            else:
+                name = k
             new_state_dict[name] = v
 
         if key in ['mpd', 'msd', 'wd']:
