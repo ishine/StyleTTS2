@@ -717,6 +717,7 @@ def load_checkpoint(model, optimizer, path, load_only_params=True, ignore_module
         if key in params and key not in ignore_modules:
             print('%s loaded' % key)
             model[key].load_state_dict(new_state_dict)
+            #model[key].load_state_dict(params[key], strict=False)
     _ = [model[key].eval() for key in model]
     
     if not load_only_params:
