@@ -147,7 +147,8 @@ def main(config_path):
                 None, 
                 first_stage_path,
                 load_only_params=True,
-                ignore_modules=['bert', 'bert_encoder', 'predictor', 'predictor_encoder', 'msd', 'mpd', 'wd', 'diffusion']) # keep starting epoch for tensorboard log
+                ignore_modules=['bert', 'bert_encoder', 'predictor', 'predictor_encoder', 'msd', 'mpd', 'wd', 'diffusion'],
+                use_1ststageconfig=False) # keep starting epoch for tensorboard log
 
             # these epochs should be counted from the start epoch
             diff_epoch += start_epoch
@@ -210,7 +211,7 @@ def main(config_path):
     # load models if there is a model
     if load_pretrained:
         model, optimizer, start_epoch, iters = load_checkpoint(model,  optimizer, config['pretrained_model'],
-                                    load_only_params=config.get('load_only_params', True))
+                                    load_only_params=config.get('load_only_params', True), use_1ststageconfig=False)
         
     n_down = model.text_aligner.n_down
 
@@ -319,19 +320,19 @@ def main(config_path):
                     
                 if multispeaker:
                     s_preds = sampler(noise = torch.randn_like(s_trg).unsqueeze(1).to(device), 
-                          embedding=bert_dur,
-                          embedding_scale=1,
-                                   features=ref, # reference from the same speaker as the embedding
-                             embedding_mask_proba=0.1,
-                             num_steps=num_steps).squeeze(1)
+                        embedding=bert_dur,
+                        embedding_scale=1,
+                                features=ref, # reference from the same speaker as the embedding
+                            embedding_mask_proba=0.1,
+                            num_steps=num_steps).squeeze(1)
                     loss_diff = model.diffusion(s_trg.unsqueeze(1), embedding=bert_dur, features=ref).mean() # EDM loss
                     loss_sty = F.l1_loss(s_preds, s_trg.detach()) # style reconstruction loss
                 else:
                     s_preds = sampler(noise = torch.randn_like(s_trg).unsqueeze(1).to(device), 
-                          embedding=bert_dur,
-                          embedding_scale=1,
-                             embedding_mask_proba=0.1,
-                             num_steps=num_steps).squeeze(1)                    
+                        embedding=bert_dur,
+                        embedding_scale=1,
+                            embedding_mask_proba=0.1,
+                            num_steps=num_steps).squeeze(1)                    
                     loss_diff = model.diffusion.module.diffusion(s_trg.unsqueeze(1), embedding=bert_dur).mean() # EDM loss
                     loss_sty = F.l1_loss(s_preds, s_trg.detach()) # style reconstruction loss
             else:
@@ -434,21 +435,21 @@ def main(config_path):
                 _dur_pred = torch.sigmoid(_s2s_pred).sum(axis=1)
 
                 loss_dur += F.l1_loss(_dur_pred[1:_text_length-1], 
-                                       _text_input[1:_text_length-1])
+                                    _text_input[1:_text_length-1])
                 loss_ce += F.binary_cross_entropy_with_logits(_s2s_pred.flatten(), _s2s_trg.flatten())
 
             loss_ce /= texts.size(0)
             loss_dur /= texts.size(0)
 
             g_loss = loss_params.lambda_mel * loss_mel + \
-                     loss_params.lambda_F0 * loss_F0_rec + \
-                     loss_params.lambda_ce * loss_ce + \
-                     loss_params.lambda_norm * loss_norm_rec + \
-                     loss_params.lambda_dur * loss_dur + \
-                     loss_params.lambda_gen * loss_gen_all + \
-                     loss_params.lambda_slm * loss_lm + \
-                     loss_params.lambda_sty * loss_sty + \
-                     loss_params.lambda_diff * loss_diff
+                    loss_params.lambda_F0 * loss_F0_rec + \
+                    loss_params.lambda_ce * loss_ce + \
+                    loss_params.lambda_norm * loss_norm_rec + \
+                    loss_params.lambda_dur * loss_dur + \
+                    loss_params.lambda_gen * loss_gen_all + \
+                    loss_params.lambda_slm * loss_lm + \
+                    loss_params.lambda_sty * loss_sty + \
+                    loss_params.lambda_diff * loss_diff
 
             running_loss += loss_mel.item()
             g_loss.backward()
@@ -479,12 +480,12 @@ def main(config_path):
                     ref_texts = texts
                     
                 slm_out = slmadv(i, 
-                                 y_rec_gt, 
-                                 y_rec_gt_pred, 
-                                 waves, 
-                                 mel_input_length,
-                                 ref_texts, 
-                                 ref_lengths, use_ind, s_trg.detach(), ref if multispeaker else None)
+                                y_rec_gt, 
+                                y_rec_gt_pred, 
+                                waves, 
+                                mel_input_length,
+                                ref_texts, 
+                                ref_lengths, use_ind, s_trg.detach(), ref if multispeaker else None)
 
                 if slm_out is None:
                     continue
@@ -652,7 +653,7 @@ def main(config_path):
                             _s2s_trg[bib, :_text_input[bib]] = 1
                         _dur_pred = torch.sigmoid(_s2s_pred).sum(axis=1)
                         loss_dur += F.l1_loss(_dur_pred[1:_text_length-1], 
-                                               _text_input[1:_text_length-1])
+                                            _text_input[1:_text_length-1])
 
                     loss_dur /= texts.size(0)
 
@@ -726,21 +727,21 @@ def main(config_path):
                 for bib in range(len(d_en)):
                     if multispeaker:
                         s_pred = sampler(noise = torch.randn((1, 256)).unsqueeze(1).to(texts.device), 
-                              embedding=bert_dur[bib].unsqueeze(0),
-                              embedding_scale=1,
+                            embedding=bert_dur[bib].unsqueeze(0),
+                            embedding_scale=1,
                                 features=ref_s[bib].unsqueeze(0), # reference from the same speaker as the embedding
-                                 num_steps=5).squeeze(1)
+                                num_steps=5).squeeze(1)
                     else:
                         s_pred = sampler(noise = torch.randn((1, 256)).unsqueeze(1).to(texts.device), 
-                              embedding=bert_dur[bib].unsqueeze(0),
-                              embedding_scale=1,
-                                 num_steps=5).squeeze(1)
+                            embedding=bert_dur[bib].unsqueeze(0),
+                            embedding_scale=1,
+                                num_steps=5).squeeze(1)
 
                     s = s_pred[:, 128:]
                     ref = s_pred[:, :128]
 
                     d = model.predictor.text_encoder(d_en[bib, :, :input_lengths[bib]].unsqueeze(0), 
-                                                     s, input_lengths[bib, ...].unsqueeze(0), text_mask[bib, :input_lengths[bib]].unsqueeze(0))
+                                                    s, input_lengths[bib, ...].unsqueeze(0), text_mask[bib, :input_lengths[bib]].unsqueeze(0))
 
                     x, _ = model.predictor.lstm(d)
                     duration = model.predictor.duration_proj(x)
