@@ -303,8 +303,8 @@ def main(config_path):
                 s = model.style_encoder(mel.unsqueeze(0).unsqueeze(1))
                 gs.append(s)
 
-            s_dur = torch.stack(ss).squeeze()  # global prosodic styles
-            gs = torch.stack(gs).squeeze() # global acoustic styles
+            s_dur = torch.stack(ss).squeeze(1)  # global prosodic styles
+            gs = torch.stack(gs).squeeze(1) # global acoustic styles
             s_trg = torch.cat([gs, s_dur], dim=-1).detach() # ground truth for denoiser
 
             bert_dur = model.bert(texts, attention_mask=(~text_mask).int())
@@ -382,7 +382,8 @@ def main(config_path):
             
             with torch.no_grad():
                 F0_real, _, F0 = model.pitch_extractor(gt.unsqueeze(1))
-                F0 = F0.reshape(F0.shape[0], F0.shape[1] * 2, F0.shape[2], 1).squeeze()
+                F0 = F0.reshape(F0.shape[0], F0.shape[1] * 2, F0.shape[2], 1)
+                F0 = F0.squeeze(3)
 
                 asr_real = model.text_aligner.get_feature(gt)
 
@@ -422,7 +423,7 @@ def main(config_path):
                 loss_gen_all = gl(wav, y_rec).mean()
             else:
                 loss_gen_all = 0
-            loss_lm = wl(wav.detach().squeeze(), y_rec.squeeze()).mean()
+            loss_lm = wl(wav.detach().squeeze(1), y_rec.squeeze(1)).mean()
 
             loss_ce = 0
             loss_dur = 0
@@ -605,8 +606,9 @@ def main(config_path):
                         s = model.style_encoder(mel.unsqueeze(0).unsqueeze(1))
                         gs.append(s)
 
-                    s = torch.stack(ss).squeeze()
-                    gs = torch.stack(gs).squeeze()
+                    s = torch.stack(ss).squeeze(1)
+
+                    gs = torch.stack(gs).squeeze(1)
                     s_trg = torch.cat([s, gs], dim=-1).detach()
 
                     bert_dur = model.bert(texts, attention_mask=(~text_mask).int())
@@ -660,7 +662,7 @@ def main(config_path):
                     s = model.style_encoder(gt.unsqueeze(1))
 
                     y_rec = model.decoder(en, F0_fake, N_fake, s)
-                    loss_mel = stft_loss(y_rec.squeeze(), wav.detach())
+                    loss_mel = stft_loss(y_rec.squeeze(1), wav.detach())
 
                     F0_real, _, F0 = model.pitch_extractor(gt.unsqueeze(1)) 
 
@@ -747,6 +749,7 @@ def main(config_path):
                     duration = model.predictor.duration_proj(x)
 
                     duration = torch.sigmoid(duration).sum(axis=-1)
+                    print("759 duration", duration.shape)
                     pred_dur = torch.round(duration.squeeze()).clamp(min=1)
 
                     pred_dur[-1] += 5
@@ -760,9 +763,11 @@ def main(config_path):
                     # encode prosody
                     en = (d.transpose(-1, -2) @ pred_aln_trg.unsqueeze(0).to(texts.device))
                     F0_pred, N_pred = model.predictor.F0Ntrain(en, s)
+                    print("773 ref", ref.shape)
                     out = model.decoder((t_en[bib, :, :input_lengths[bib]].unsqueeze(0) @ pred_aln_trg.unsqueeze(0).to(texts.device)), 
                                             F0_pred, N_pred, ref.squeeze().unsqueeze(0))
 
+                    print("777 out", out.shape)
                     writer.add_audio('pred/y' + str(bib), out.cpu().numpy().squeeze(), epoch, sample_rate=sr)
 
                     if bib >= 5:
