@@ -66,6 +66,7 @@ def main(config_path):
     
     batch_size = config.get('batch_size', 10)
     segmented_batch_size = config.get('segmented_batch_size', [16, 8, 6])
+    batch_size = segmented_batch_size[0]
 
     epochs = config.get('epochs_2nd', 200)
     save_freq = config.get('save_freq', 2)
@@ -282,6 +283,7 @@ def main(config_path):
         elif (segmented_batch_size and 
             (epoch >= joint_epoch) and 
             batch_size != segmented_batch_size[2]):
+            batch_size = segmented_batch_size[2]
             print ("Entered joint slmadv training segment; "
                 f"using batch size {batch_size}")
             print ("Rebuilding dataloaders")
