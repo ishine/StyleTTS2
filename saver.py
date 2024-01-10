@@ -83,7 +83,12 @@ class Saver:
                 to_cull_path = cull_ckpt['save_path']
                 if os.path.exists(to_cull_path):
                     logging.info(f"Culling {to_cull_path} to make room")
-                    os.remove(to_cull_path)
+                    try:
+                        # Sometimes the FS doesn't update fast enough
+                        os.remove(to_cull_path)
+                    except OSError:
+                        logging.warn(f"Cull path warning for {to_cull_path}")
+                        pass
 
             need_new = True
             stats_list = stats_list[len(stats_list) - self.max_ckpts:]
