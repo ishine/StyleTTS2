@@ -5,4 +5,4 @@ RUN DEBIAN_FRONTEND=noninteractive apt update && apt install -y git ffmpeg pytho
 ADD "https://api.github.com/repos/effusiveperiscope/StyleTTS2/commits?per_page=1" latest_commit
 RUN git clone https://github.com/effusiveperiscope/StyleTTS2 /root/StyleTTS2
 WORKDIR /root/StyleTTS2
-RUN pip install -r requirements.txt gdown tqdm pyyaml requests ffmpeg-python
+RUN pip install -r requirements.txt gdown tqdm pyyaml requests ffmpeg-python ngrok

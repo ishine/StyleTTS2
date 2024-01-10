@@ -27,6 +27,8 @@ from utils import *
 from losses import *
 from optimizers import build_optimizer
 import time
+from saver import Saver
+from pathlib import Path
 
 from accelerate import Accelerator
 from accelerate.utils import LoggerType
@@ -121,6 +123,10 @@ def main(config_path):
     
     model_params = recursive_munch(config['model_params'])
     multispeaker = model_params.multispeaker
+    if multispeaker:
+        logging.info('Training multispeaker model')
+    else:
+        logging.info('Training single speaker model')
     model = build_model(model_params, text_aligner, pitch_extractor, plbert)
 
     best_loss = float('inf')  # best test loss
@@ -148,11 +154,24 @@ def main(config_path):
         optimizer.optimizers[k] = accelerator.prepare(optimizer.optimizers[k])
         optimizer.schedulers[k] = accelerator.prepare(optimizer.schedulers[k])
     
+    saver = Saver(model, optimizer, config, epoch_tag = 'epoch_1st')
     with accelerator.main_process_first():
-        if config.get('pretrained_model', '') != '':
-            model, optimizer, start_epoch, iters = load_checkpoint(model,  optimizer, config['pretrained_model'],
-                                        load_only_params=config.get('load_only_params', True))
+        pretrained_model = config.get('pretrained_model', '')
+        resume_model = saver.retrieve_best()
+        if config.get('resume', False) and (resume_model is not None):
+            logging.info(f'Resume model from {resume_model}')
+            assert (Path(resume_model).stem.startswith('epoch_1st_'))
+            model, optimizer, start_epoch, iters = load_checkpoint(model,  optimizer, resume_model,
+                load_only_params=False) # by definition of resuming
+        elif pretrained_model != '':
+            logging.info(f'Loading from pretrained model ({pretrained_model})')
+            if not os.path.exists(pretrained_model):
+                pretrained_model = os.path.join(log_dir, pretrained_model)
+            assert (Path(pretrained_model).stem.startswith('epoch_1st_'))
+            model, optimizer, start_epoch, iters = load_checkpoint(model,  optimizer, pretrained_model,
+                load_only_params=config.get('load_only_params', True))
         else:
+            logging.info('Starting fresh run')
             start_epoch = 0
             iters = 0
     
@@ -170,6 +189,9 @@ def main(config_path):
                    model.wd, 
                    sr, 
                    model_params.slm.sr).to(device)
+
+    loss_test = None
+    iters_test = None
 
     for epoch in range(start_epoch, epochs):
         running_loss = 0
@@ -321,6 +343,12 @@ def main(config_path):
                 running_loss = 0
                 
                 print('Time elasped:', time.time()-start_time)
+
+            if loss_test is None:
+                val_loss = None
+            else:
+                val_loss = loss_test / iters_test
+            saver.step_hook(epoch, iters, val_loss)
                                 
         loss_test = 0
 
@@ -412,19 +440,21 @@ def main(config_path):
                     if bib >= 6:
                         break
 
-            if epoch % saving_epoch == 0:
-                if (loss_test / iters_test) < best_loss:
-                    best_loss = loss_test / iters_test
-                print('Saving..')
-                state = {
-                    'net':  {key: model[key].state_dict() for key in model}, 
-                    'optimizer': optimizer.state_dict(),
-                    'iters': iters,
-                    'val_loss': loss_test / iters_test,
-                    'epoch': epoch,
-                }
-                save_path = osp.join(log_dir, 'epoch_1st_%05d.pth' % epoch)
-                torch.save(state, save_path)
+            if (loss_test / iters_test) < best_loss:
+                best_loss = loss_test / iters_test
+
+            saver.epoch_hook(epoch, iters, loss_test / iters_test)
+            #if epoch % saving_epoch == 0:
+            #    print('Saving..')
+            #    state = {
+            #        'net':  {key: model[key].state_dict() for key in model}, 
+            #        'optimizer': optimizer.state_dict(),
+            #        'iters': iters,
+            #        'val_loss': loss_test / iters_test,
+            #        'epoch': epoch,
+            #    }
+            #    save_path = osp.join(log_dir, 'epoch_1st_%05d.pth' % epoch)
+            #    torch.save(state, save_path)
                                 
     if accelerator.is_main_process:
         print('Saving..')

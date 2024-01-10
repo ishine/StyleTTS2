@@ -7,9 +7,16 @@ epochs_1st: 200 # number of epochs for first stage training (pre-training)
 epochs_2nd: 100 # number of peochs for second stage training (joint training)
 batch_size: 16
 max_len: 400 # maximum number of frames
-pretrained_model: ""
-second_stage_load_pretrained: true # set to true if the pre-trained model is for 2nd stage
-load_only_params: false # set to true if do not want to load epoch numbers and optimizer parameters
+# USAGE: Specify "pretrained_model" and resume: false for your initial
+# pretrained checkpoint (can be 1st or 2nd stage). 
+# Then, if you need to resume later, set resume to true.
+# For 2nd stage, if the checkpoint starts with epoch_1st it is assumed to be first stage
+pretrained_model: "" # Specify this for the initial training runs
+resume: false # will resume from an existing same stage model in the checkpoint directory if present
+
+saver_freq_steps: 500 # saves every these steps in addition to epochs -- useful for interruptible GPU instances
+saver_max_ckpts: 5 # maximum ckpts to save in logging directory
+saver_mode: 'VAL_LOSS' # decide which ckpts to save based on validation loss (vs. 'ITER' based on total steps)
 
 F0_path: "Utils/JDC/bst.t7"
 ASR_config: "Utils/ASR/config.yml"
@@ -19,7 +26,7 @@ PLBERT_dir: 'Utils/PLBERT/'
 data_params:
   train_data: "Data/train_list.txt"
   val_data: "Data/val_list.txt"
-  root_path: "/local/LJSpeech-1.1/wavs"
+  root_path: "twilight_data"
   OOD_data: "Data/OOD_texts.txt"
   min_length: 50 # sample until texts with this size are obtained for OOD texts
 
