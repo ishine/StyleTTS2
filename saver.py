@@ -49,9 +49,16 @@ class Saver:
         # if val_loss is None, that means there is no recorded validation loss yet
         if (len(stats_list) >= self.max_ckpts and self.save_mode == 'VAL_LOSS'
             and val_loss is not None):
+
+            # For the purposes of this branch, a None/undefined loss is
+            # considered "infinite"
+            comp_loss = stats_list[0]['val_loss']
+            if comp_loss is None:
+                comp_loss = sys.float_info.max
+
             # If lower than the highest stored loss, we should cull the first
             # element(s) to make room.
-            should_cull = val_loss <= stats_list[0]['val_loss']
+            should_cull = val_loss <= comp_loss
             if not should_cull:
                 logging.info(f"New checkpoint with val_loss {val_loss}" 
                 f" did not outperform worst stored val_loss"
@@ -86,9 +93,7 @@ class Saver:
 
         return stats_list, need_new
 
-    # Retrieves path of best performing checkpoint, or latest checkpoint if
-    # val_loss was not tracked
-    # Returns None if none can be found
+    # Retrieves path of most recent checkpoint
     def retrieve_best(self):
         if not os.path.exists(self.log_dir):
             logging.info("No log dir detected.")
@@ -96,7 +101,6 @@ class Saver:
 
         epoch = self.epoch_tag
 
-        # Look for most recent checkpoint to use as fallback
         files = list(filter(
             lambda p: p.endswith('.pth') and p.startswith(self.epoch_tag),
             os.listdir(self.log_dir)))
@@ -113,38 +117,8 @@ class Saver:
                 max_ctime = f_time
                 max_ctime_path = f
             
-        if not os.path.exists(self.stats_list_path):
-            logging.info("No stats list detected.")
-            logging.info(f"Saver detects most recent checkpoint {max_ctime_path}")
-            return max_ctime_path
-
-        stats_list = self.try_load_stats()
-        best_ckpt = {'save_path': '', 'val_loss': sys.float_info.max}
-        best_ckpt_ctime = 0
-        for ckpt in stats_list:
-            save_path = ckpt.get('save_path', '')
-            if not Path(save_path).stem.startswith(self.epoch_tag):
-                continue
-            if not os.path.exists(save_path):
-                continue
-
-            ckpt_ctime = os.path.getctime(ckpt['save_path'])
-            # Select more recent checkpoint if one val_loss is indeterminate
-            if ckpt['val_loss'] is None or best_ckpt['val_loss'] is None:
-                if ckpt_ctime > best_ckpt_ctime:
-                    best_ckpt = ckpt
-                    best_ckpt_ctime = ckpt_ctime
-            elif ckpt['val_loss'] < best_ckpt['val_loss']:
-                best_ckpt = ckpt
-        
-        if not os.path.exists(best_ckpt['save_path']):
-            logging.info("No checkpoint with valid Saver records.")
-            logging.info(f"Saver detects most recent checkpoint {max_ctime_path}")
-            return max_ctime_path
-        
-        logging.info(f"Saver detects checkpoint with best recorded validation loss "
-            f"{best_ckpt['val_loss']} | {best_ckpt['save_path']}")
-        return best_ckpt['save_path']
+        logging.info(f"Saver detects most recent checkpoint {max_ctime_path}")
+        return max_ctime_path
 
     def try_load_stats(self):
         with open(self.stats_list_path) as f:
