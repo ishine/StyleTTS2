@@ -38,7 +38,7 @@ from torch.utils.tensorboard import SummaryWriter
 
 import logging
 from accelerate.logging import get_logger
-logger = get_logger(__name__, log_level="DEBUG")
+logger = get_logger(__name__, log_level="INFO")
 
 @click.command()
 @click.option('-p', '--config_path', default='Configs/config.yml', type=str)

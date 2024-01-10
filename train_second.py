@@ -43,9 +43,9 @@ class MyDataParallel(torch.nn.DataParallel):
 import logging
 from logging import StreamHandler
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
+logger.setLevel(logging.INFO)
 handler = StreamHandler()
-handler.setLevel(logging.DEBUG)
+handler.setLevel(logging.INFO)
 logger.addHandler(handler)
 
 from saver import Saver
