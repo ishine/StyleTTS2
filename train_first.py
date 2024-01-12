@@ -40,6 +40,17 @@ import logging
 from accelerate.logging import get_logger
 logger = get_logger(__name__, log_level="INFO")
 
+def print_memory(tag : str = ""):
+    for i in range(torch.cuda.device_count()):
+         memory_percent = (torch.cuda.memory_allocated() /
+            torch.cuda.max_memory_allocated())
+         if len(tag):
+            tag = f"({tag})"
+         logging.info(
+            f"{tag} Memory usage on GPU {i}: {memory_percent:.1%} "
+            f"( {torch.cuda.memory_allocated():.9e}"
+            f" / {torch.cuda.max_memory_allocated():.9e} )")
+
 @click.command()
 @click.option('-p', '--config_path', default='Configs/config.yml', type=str)
 def main(config_path):
@@ -444,17 +455,6 @@ def main(config_path):
                 best_loss = loss_test / iters_test
 
             saver.epoch_hook(epoch, iters, loss_test / iters_test)
-            #if epoch % saving_epoch == 0:
-            #    print('Saving..')
-            #    state = {
-            #        'net':  {key: model[key].state_dict() for key in model}, 
-            #        'optimizer': optimizer.state_dict(),
-            #        'iters': iters,
-            #        'val_loss': loss_test / iters_test,
-            #        'epoch': epoch,
-            #    }
-            #    save_path = osp.join(log_dir, 'epoch_1st_%05d.pth' % epoch)
-            #    torch.save(state, save_path)
                                 
     if accelerator.is_main_process:
         print('Saving..')
