@@ -32,6 +32,8 @@ from Modules.diffusion.sampler import DiffusionSampler, ADPM2Sampler, KarrasSche
 from optimizers import build_optimizer
 from pathlib import Path
 from saver import Saver
+import signal
+import sys
 
 # simple fix for dataparallel that allows access to class attributes
 class MyDataParallel(torch.nn.DataParallel):
@@ -274,6 +276,17 @@ def main(config_path):
         model.bert.train()
         model.msd.train()
         model.mpd.train()
+
+        def sigterm_handler(signum, frame):
+            logging.info("SIGTERM received, attempting save...")
+            if loss_test is None:
+                val_loss = None
+            else:
+                val_loss = loss_test / iters_test
+            saver.try_save(epoch, iters, val_loss)
+            logging.info("Save completed")
+            sys.exit(0)
+        signal.signal(signal.SIGTERM, sigterm_handler)
 
         if (segmented_batch_size and 
             (epoch >= diff_epoch) and 

@@ -28,6 +28,8 @@ from losses import *
 from optimizers import build_optimizer
 import time
 from saver import Saver
+import signal
+import sys
 from pathlib import Path
 
 from accelerate import Accelerator
@@ -209,6 +211,16 @@ def main(config_path):
         start_time = time.time()
 
         _ = [model[key].train() for key in model]
+        def sigterm_handler(signum, frame):
+            logging.info("SIGTERM received, attempting save...")
+            if loss_test is None:
+                val_loss = None
+            else:
+                val_loss = loss_test / iters_test
+            saver.try_save(epoch, iters, val_loss)
+            logging.info("Save completed")
+            sys.exit(0)
+        signal.signal(signal.SIGTERM, sigterm_handler)
 
         for i, batch in enumerate(train_dataloader):
             waves = batch[0]
