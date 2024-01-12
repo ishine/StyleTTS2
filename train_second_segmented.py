@@ -30,6 +30,7 @@ from Modules.slmadv import SLMAdversarialLoss
 from Modules.diffusion.sampler import DiffusionSampler, ADPM2Sampler, KarrasSchedule
 
 from optimizers import build_optimizer
+from pathlib import Path
 
 # simple fix for dataparallel that allows access to class attributes
 class MyDataParallel(torch.nn.DataParallel):
@@ -42,9 +43,9 @@ class MyDataParallel(torch.nn.DataParallel):
 import logging
 from logging import StreamHandler
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
+logger.setLevel(logging.INFO)
 handler = StreamHandler()
-handler.setLevel(logging.DEBUG)
+handler.setLevel(logging.INFO)
 logger.addHandler(handler)
 
 @click.command()
@@ -138,28 +139,6 @@ def main(config_path):
     start_epoch = 0
     iters = 0
 
-    load_pretrained = config.get('pretrained_model', '') != '' and config.get('second_stage_load_pretrained', False)
-    
-    if not load_pretrained:
-        if config.get('first_stage_path', '') != '':
-            first_stage_path = osp.join(log_dir, config.get('first_stage_path', 'first_stage.pth'))
-            print('Loading the first stage model at %s ...' % first_stage_path)
-            model, _, start_epoch, iters = load_checkpoint(model, 
-                None, 
-                first_stage_path,
-                load_only_params=True,
-                ignore_modules=['bert', 'bert_encoder', 'predictor', 'predictor_encoder', 'msd', 'mpd', 'wd', 'diffusion'],
-                use_1ststageconfig=False) # keep starting epoch for tensorboard log
-
-            # these epochs should be counted from the start epoch
-            diff_epoch += start_epoch
-            joint_epoch += start_epoch
-            epochs += start_epoch
-            
-            model.predictor_encoder = copy.deepcopy(model.style_encoder)
-        else:
-            raise ValueError('You need to specify the path to the first stage model.') 
-
     gl = GeneratorLoss(model.mpd, model.msd).to(device)
     dl = DiscriminatorLoss(model.mpd, model.msd).to(device)
     wl = WavLMLoss(model_params.slm.model, 
@@ -191,7 +170,50 @@ def main(config_path):
     
     optimizer = build_optimizer({key: model[key].parameters() for key in model},
                                           scheduler_params_dict=scheduler_params_dict, lr=optimizer_params.lr)
-    
+
+    saver = Saver(model, optimizer, config, epoch_tag = 'epoch_2nd')
+        
+    pretrained_model = config.get('pretrained_model', '')
+    resume_model = saver.retrieve_best()
+    if config.get('resume', False) and (resume_model is not None):
+        logging.info(f'Loading 2nd stage resume model from {resume_model}')
+        logging.info('(Ignoring pretrained model parameter/first stage.)')
+        assert (Path(resume_model).stem.startswith('epoch_2nd_'))
+        model, optimizer, start_epoch, iters = load_checkpoint(model,  optimizer, resume_model,
+            load_only_params=False, use_1ststageconfig=False) # by definition of resuming
+        model_loaded = True
+    elif pretrained_model.startswith("epoch_1st"):
+        logging.info("Start from first stage model")
+        first_stage_path = pretrained_model
+        if first_stage_path != '':
+            first_stage_path = osp.join(log_dir, first_stage_path)
+            logging.info(f'Loading first stage model from {first_stage_path}')
+            print('Loading the first stage model at %s ...' % first_stage_path)
+            model, _, start_epoch, iters = load_checkpoint(model, 
+                None, 
+                first_stage_path,
+                load_only_params=True,
+                ignore_modules=['bert', 'bert_encoder', 'predictor', 'predictor_encoder', 'msd', 'mpd', 'wd', 'diffusion'],
+                use_1ststageconfig=False) # keep starting epoch for tensorboard log
+            model_loaded = True
+
+            # these epochs should be counted from the start epoch
+            diff_epoch += start_epoch
+            joint_epoch += start_epoch
+            epochs += start_epoch
+            
+            model.predictor_encoder = copy.deepcopy(model.style_encoder)
+    elif pretrained_model != '':
+        logging.info(f'Loading 2nd stage from pretrained model '
+            f'({pretrained_model})')
+        if not os.path.exists(pretrained_model):
+            pretrained_model = os.path.join(log_dir, pretrained_model)
+        model, optimizer, start_epoch, iters = load_checkpoint(model,  optimizer, config['pretrained_model'],
+            load_only_params=True, use_1ststageconfig=False)
+        model_loaded = True
+    else:
+        logging.info('Starting fresh run')
+
     # adjust BERT learning rate
     for g in optimizer.optimizers['bert'].param_groups:
         g['betas'] = (0.9, 0.99)
@@ -208,11 +230,6 @@ def main(config_path):
             g['initial_lr'] = optimizer_params.ft_lr
             g['min_lr'] = 0
             g['weight_decay'] = 1e-4
-        
-    # load models if there is a model
-    if load_pretrained:
-        model, optimizer, start_epoch, iters = load_checkpoint(model,  optimizer, config['pretrained_model'],
-                                    load_only_params=config.get('load_only_params', True), use_1ststageconfig=False)
         
     n_down = model.text_aligner.n_down
 
@@ -242,6 +259,8 @@ def main(config_path):
                                 sig=slmadv_params.sig
                                )
 
+    loss_test = None
+    iters_test = None
 
     for epoch in range(start_epoch, epochs):
         running_loss = 0
@@ -304,7 +323,6 @@ def main(config_path):
                 num_workers=0,
                 device=device,
                 dataset_config={})
- 
 
         if epoch >= diff_epoch:
             start_ds = True
@@ -613,6 +631,12 @@ def main(config_path):
                 running_loss = 0
                 
                 print('Time elasped:', time.time()-start_time)
+
+            if loss_test is None:
+                val_loss = None
+            else:
+                val_loss = loss_test / iters_test
+            saver.step_hook(epoch, iters, val_loss)
                 
         loss_test = 0
         loss_align = 0
@@ -800,8 +824,7 @@ def main(config_path):
                     duration = model.predictor.duration_proj(x)
 
                     duration = torch.sigmoid(duration).sum(axis=-1)
-                    print("759 duration", duration.shape)
-                    pred_dur = torch.round(duration.squeeze()).clamp(min=1)
+                    pred_dur = torch.round(duration.squeeze(0)).clamp(min=1)
 
                     pred_dur[-1] += 5
 
@@ -814,29 +837,32 @@ def main(config_path):
                     # encode prosody
                     en = (d.transpose(-1, -2) @ pred_aln_trg.unsqueeze(0).to(texts.device))
                     F0_pred, N_pred = model.predictor.F0Ntrain(en, s)
-                    print("773 ref", ref.shape)
                     out = model.decoder((t_en[bib, :, :input_lengths[bib]].unsqueeze(0) @ pred_aln_trg.unsqueeze(0).to(texts.device)), 
-                                            F0_pred, N_pred, ref.squeeze().unsqueeze(0))
+                                            F0_pred, N_pred, ref.squeeze(0).unsqueeze(0))
 
-                    print("777 out", out.shape)
                     writer.add_audio('pred/y' + str(bib), out.cpu().numpy().squeeze(), epoch, sample_rate=sr)
 
                     if bib >= 5:
                         break
+
+        if (loss_test / iters_test) < best_loss:
+            best_loss = loss_test / iters_test
+                            
+        saver.epoch_hook(epoch, iters, loss_test / iters_test)
                             
         if epoch % saving_epoch == 0:
             if (loss_test / iters_test) < best_loss:
                 best_loss = loss_test / iters_test
-            print('Saving..')
-            state = {
-                'net':  {key: model[key].state_dict() for key in model}, 
-                'optimizer': optimizer.state_dict(),
-                'iters': iters,
-                'val_loss': loss_test / iters_test,
-                'epoch': epoch,
-            }
-            save_path = osp.join(log_dir, 'epoch_2nd_%05d.pth' % epoch)
-            torch.save(state, save_path)
+            #print('Saving..')
+            #state = {
+            #    'net':  {key: model[key].state_dict() for key in model}, 
+            #    'optimizer': optimizer.state_dict(),
+            #    'iters': iters,
+            #    'val_loss': loss_test / iters_test,
+            #    'epoch': epoch,
+            #}
+            #save_path = osp.join(log_dir, 'epoch_2nd_%05d.pth' % epoch)
+            #torch.save(state, save_path)
             
             # if estimate sigma, save the estimated simga
             if model_params.diffusion.dist.estimate_sigma_data:
