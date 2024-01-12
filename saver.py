@@ -122,8 +122,9 @@ class Saver:
                 max_ctime = f_time
                 max_ctime_path = f
             
+        max_ctime_path = str(max_ctime_path).replace('\\','/')
         logging.info(f"Saver detects most recent checkpoint {max_ctime_path}")
-        return str(max_ctime_path).replace('\\','/')
+        return max_ctime_path
 
     def try_load_stats(self):
         with open(self.stats_list_path) as f:
