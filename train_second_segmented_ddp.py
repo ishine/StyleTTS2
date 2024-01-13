@@ -579,6 +579,10 @@ def main(config_path):
             running_loss += accelerator.gather(loss_mel).mean().item()
             #with torch.autograd.set_detect_anomaly(True):
             accelerator.backward(g_loss)
+            
+            # try clipping gradients for these components to prevent nan in mixed precision
+            for key in ['bert_encoder', 'bert', 'predictor', 'predictor_encoder']:
+                accelerator.clip_grad_norm_(model[key].parameters(), max_norm=1)
 
             if torch.isnan(g_loss):
                 from IPython.core.debugger import set_trace
