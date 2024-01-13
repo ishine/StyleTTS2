@@ -698,11 +698,11 @@ def build_model(args, text_aligner, pitch_extractor, bert):
     return nets
 
 def load_checkpoint(model, optimizer, path, load_only_params=True, ignore_modules=[],
-    use_1ststageconfig=True):
+    use_moduleprefix=True):
     state = torch.load(path, map_location='cpu')
     params = state['net']
 
-    if not use_1ststageconfig:
+    if not use_moduleprefix:
         for key in model:
             from collections import OrderedDict
             new_state_dict = OrderedDict()
