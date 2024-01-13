@@ -65,7 +65,7 @@ def main(config_path):
     if not osp.exists(log_dir): os.makedirs(log_dir, exist_ok=True)
     shutil.copy(config_path, osp.join(log_dir, osp.basename(config_path)))
     ddp_kwargs = DistributedDataParallelKwargs(find_unused_parameters=True,
-        #broadcast_buffers=False,
+        broadcast_buffers=False,
         )
     accelerator = Accelerator(project_dir=log_dir, split_batches=True, kwargs_handlers=[ddp_kwargs])    
     if accelerator.is_main_process:
@@ -577,8 +577,8 @@ def main(config_path):
                     loss_params.lambda_diff * loss_diff
 
             running_loss += accelerator.gather(loss_mel).mean().item()
-            with torch.autograd.set_detect_anomaly(True):
-                accelerator.backward(g_loss)
+            #with torch.autograd.set_detect_anomaly(True):
+            accelerator.backward(g_loss)
 
             if torch.isnan(g_loss):
                 from IPython.core.debugger import set_trace
