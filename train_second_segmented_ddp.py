@@ -218,7 +218,7 @@ def main(config_path):
             logging.info('(Ignoring pretrained model parameter/first stage.)')
             assert (Path(resume_model).stem.startswith('epoch_2nd_'))
             model, optimizer, start_epoch, iters = load_checkpoint(model,  optimizer, resume_model,
-                load_only_params=False, use_1ststageconfig=False) # by definition of resuming
+                load_only_params=False, use_moduleprefix=distributed) # by definition of resuming
             model_loaded = True
         elif pretrained_model.startswith("epoch_1st"):
             logging.info("Start from first stage model")
@@ -232,7 +232,7 @@ def main(config_path):
                     first_stage_path,
                     load_only_params=True,
                     ignore_modules=['bert', 'bert_encoder', 'predictor', 'predictor_encoder', 'msd', 'mpd', 'wd', 'diffusion'],
-                    use_1ststageconfig=False) # keep starting epoch for tensorboard log
+                    use_moduleprefix=distributed) # keep starting epoch for tensorboard log
                 model_loaded = True
 
                 # these epochs should be counted from the start epoch
@@ -246,8 +246,8 @@ def main(config_path):
                 f'({pretrained_model})')
             if not os.path.exists(pretrained_model):
                 pretrained_model = os.path.join(log_dir, pretrained_model)
-            model, optimizer, start_epoch, iters = load_checkpoint(model,  optimizer, config['pretrained_model'],
-                load_only_params=True, use_1ststageconfig=False)
+            model, optimizer, start_epoch, iters = load_checkpoint(model, optimizer, pretrained_model,
+                load_only_params=True, use_moduleprefix=distributed)
             model_loaded = True
         else:
             logging.info('Starting fresh run')
@@ -502,7 +502,10 @@ def main(config_path):
                 F0 = F0.reshape(F0.shape[0], F0.shape[1] * 2, F0.shape[2], 1)
                 F0 = F0.squeeze(3)
 
-                asr_real = model.text_aligner.get_feature(gt)
+                if distributed:
+                    asr_real = model.text_aligner.module.get_feature(gt)
+                else:
+                    asr_real = model.text_aligner.get_feature(gt)
 
                 N_real = log_norm(gt.unsqueeze(1)).squeeze(1)
                 
@@ -516,7 +519,10 @@ def main(config_path):
                     # ground truth from reconstruction
                     wav = y_rec_gt_pred # use reconstruction since decoder is fixed
 
-            F0_fake, N_fake = model.predictor.F0Ntrain(p_en, s_dur)
+            if distributed:
+                F0_fake, N_fake = model.predictor.module.F0Ntrain(p_en, s_dur)
+            else:
+                F0_fake, N_fake = model.predictor.F0Ntrain(p_en, s_dur)
 
             y_rec = model.decoder(en, F0_fake, N_fake, s)
 

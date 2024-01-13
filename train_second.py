@@ -212,7 +212,7 @@ def main(config_path):
             f'({pretrained_model})')
         if not os.path.exists(pretrained_model):
             pretrained_model = os.path.join(log_dir, pretrained_model)
-        model, optimizer, start_epoch, iters = load_checkpoint(model,  optimizer, config['pretrained_model'],
+        model, optimizer, start_epoch, iters = load_checkpoint(model,  optimizer, pretrained_model,
             load_only_params=True, use_1ststageconfig=False)
         model_loaded = True
     else:
@@ -234,7 +234,6 @@ def main(config_path):
             g['initial_lr'] = optimizer_params.ft_lr
             g['min_lr'] = 0
             g['weight_decay'] = 1e-4
-
         
     n_down = model.text_aligner.n_down
 
