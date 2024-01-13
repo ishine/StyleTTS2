@@ -202,7 +202,9 @@ def main(config_path):
     scheduler_params_dict['style_encoder']['max_lr'] = optimizer_params.ft_lr * 2
     
     optimizer = build_optimizer({key: model[key].parameters() for key in model},
-                                          scheduler_params_dict=scheduler_params_dict, lr=optimizer_params.lr)
+        scheduler_params_dict=scheduler_params_dict, lr=optimizer_params.lr,
+        # Use higher epsilon for mixed precision training
+        eps=1e-4 if accelerator.mixed_precision != 'no' else 1e-9)
 
     for k, v in optimizer.optimizers.items():
         optimizer.optimizers[k] = accelerator.prepare(optimizer.optimizers[k])
@@ -580,10 +582,6 @@ def main(config_path):
             #with torch.autograd.set_detect_anomaly(True):
             accelerator.backward(g_loss)
             
-            # try clipping gradients for these components to prevent nan in mixed precision
-            for key in ['bert_encoder', 'bert', 'predictor', 'predictor_encoder']:
-                accelerator.clip_grad_norm_(model[key].parameters(), max_norm=1)
-
             if torch.isnan(g_loss):
                 from IPython.core.debugger import set_trace
                 set_trace()

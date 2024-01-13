@@ -62,8 +62,8 @@ def define_scheduler(optimizer, params):
 
     return scheduler
 
-def build_optimizer(parameters_dict, scheduler_params_dict, lr):
-    optim = dict([(key, AdamW(params, lr=lr, weight_decay=1e-4, betas=(0.0, 0.99), eps=1e-9))
+def build_optimizer(parameters_dict, scheduler_params_dict, lr, eps=1e-09):
+    optim = dict([(key, AdamW(params, lr=lr, weight_decay=1e-4, betas=(0.0, 0.99), eps=eps))
                    for key, params in parameters_dict.items()])
 
     schedulers = dict([(key, define_scheduler(opt, scheduler_params_dict[key])) \
