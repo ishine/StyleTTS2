@@ -504,6 +504,7 @@ def main(config_path):
                 F0 = F0.reshape(F0.shape[0], F0.shape[1] * 2, F0.shape[2], 1)
                 F0 = F0.squeeze(3)
 
+                # 1
                 if distributed:
                     asr_real = model.text_aligner.module.get_feature(gt)
                 else:
@@ -579,13 +580,8 @@ def main(config_path):
                     loss_params.lambda_diff * loss_diff
 
             running_loss += accelerator.gather(loss_mel).mean().item()
-            #with torch.autograd.set_detect_anomaly(True):
             accelerator.backward(g_loss)
             
-            if torch.isnan(g_loss):
-                from IPython.core.debugger import set_trace
-                set_trace()
-
             optimizer.step('bert_encoder')
             optimizer.step('bert')
             optimizer.step('predictor')
@@ -779,7 +775,10 @@ def main(config_path):
 
                     s = model.predictor_encoder(gt.unsqueeze(1))
 
-                    F0_fake, N_fake = model.predictor.F0Ntrain(p_en, s)
+                    if distributed:
+                        F0_fake, N_fake = model.predictor.module.F0Ntrain(p_en, s)
+                    else:
+                        F0_fake, N_fake = model.predictor.F0Ntrain(p_en, s)
 
                     loss_dur = 0
                     for _s2s_pred, _text_input, _text_length in zip(d, (d_gt), input_lengths):
@@ -842,7 +841,11 @@ def main(config_path):
                         s_dur = model.predictor_encoder(gt.unsqueeze(1))
                         p_en = p[bib, :, :mel_length // 2].unsqueeze(0)
 
-                        F0_fake, N_fake = model.predictor.F0Ntrain(p_en, s_dur)
+                        # 2
+                        if distributed:
+                            F0_fake, N_fake = model.predictor.module.F0Ntrain(p_en, s_dur)
+                        else:
+                            F0_fake, N_fake = model.predictor.F0Ntrain(p_en, s_dur)
 
                         y_pred = model.decoder(en, F0_fake, N_fake, s)
 
