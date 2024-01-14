@@ -296,3 +296,22 @@ def build_dataloader(path_list,
 
     return data_loader
 
+def clamp(min_, x, max_):
+    return max(min_, min(x, max_))
+
+class ResumableDataLoaderIterator:
+    def __init__(self, dataloader, start_batch_idx):
+        self.dataloader = dataloader
+        self.batch_idx = clamp(0, start_batch_idx, len(dataloader) - 1)
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        if self.batch_idx >= len(self.dataloader):
+            raise StopIteration
+        else:
+            data = self.dataloader.dataset[self.batch_idx]
+            old_idx = self.batch_idx
+            self.batch_idx += 1
+            return old_idx, data

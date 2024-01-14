@@ -135,7 +135,8 @@ class Saver:
                     f"{self.stats_list_path}, initializing empty list")
                 return []
 
-    def try_save(self, epoch, iters, val_loss):
+    def try_save(self, epoch, iters, val_loss,
+        batch_idx, batch_size):
         if not os.path.exists(self.stats_list_path):
             stats_list = []
             with open(self.stats_list_path, 'a') as f:
@@ -153,7 +154,9 @@ class Saver:
             'optimizer': self.optimizer.state_dict(),
             'iters': iters,
             'val_loss': val_loss,
-            'epoch': epoch
+            'epoch': epoch,
+            'batch_idx': batch_idx,
+            'batch_size': batch_size
         }
         save_path = os.path.join(self.log_dir, 
             f'{self.epoch_tag}_{epoch}_{hex(iters)[2:]}.pth')
@@ -161,7 +164,9 @@ class Saver:
             'iters': iters,
             'epoch': epoch,
             'val_loss': val_loss,
-            'save_path': save_path
+            'save_path': save_path,
+            'batch_idx': batch_idx,
+            'batch_size': batch_size
         })
         logging.info(f'EPOCH {epoch} ITERS {iters} Saving checkpoint to {save_path}')
 
@@ -169,15 +174,14 @@ class Saver:
             json.dump(stats_list, f)
         torch.save(state, save_path)
 
-    def step_hook(self, epoch, iters, val_loss):
-        #logging.debug(f'firing step hook with epoch {epoch} iters {iters}')
+    def step_hook(self, epoch, iters, val_loss, batch_idx, batch_size):
         if val_loss is not None:
             val_loss = float(val_loss)
         if iters % self.save_freq == 0:
-            self.try_save(epoch, iters, val_loss)
+            self.try_save(epoch, iters, val_loss, batch_idx, batch_size)
 
-    def epoch_hook(self, epoch, iters, val_loss):
+    def epoch_hook(self, epoch, iters, val_loss, batch_idx, batch_size):
         if val_loss is not None:
             val_loss = float(val_loss)
         if epoch % self.save_epoch == 0:
-            self.try_save(epoch, iters, val_loss)
+            self.try_save(epoch, iters, val_loss, batch_idx, batch_size)

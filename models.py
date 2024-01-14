@@ -742,3 +742,47 @@ def load_checkpoint(model, optimizer, path, load_only_params=True, ignore_module
         iters = 0
         
     return model, optimizer, epoch, iters
+
+def load_checkpoint2(model, optimizer, path, load_only_params=True, ignore_modules=[],
+    use_moduleprefix=True):
+    state = torch.load(path, map_location='cpu')
+    params = state['net']
+
+    if not use_moduleprefix:
+        for key in model:
+            from collections import OrderedDict
+            new_state_dict = OrderedDict()
+            for k,v in params[key].items(): # Fix for non-distributed training
+                if not k.startswith("module"):
+                    name = 'module.' + k
+                else:
+                    name = k
+                new_state_dict[name] = v
+
+            if key in ['mpd', 'msd', 'wd']:
+                new_state_dict = params[key]
+
+            if key in params and key not in ignore_modules:
+                print('%s loaded' % key)
+                model[key].load_state_dict(new_state_dict)
+    else:
+        for key in model:
+            if key in params and key not in ignore_modules:
+                print('%s loaded' % key)
+                model[key].load_state_dict(params[key], strict=False)
+
+    _ = [model[key].eval() for key in model]
+    
+    if not load_only_params:
+        epoch = state["epoch"]
+        iters = state["iters"]
+        batch_idx = state.get("batch_idx", 0)
+        batch_size = state.get("batch_size", None)
+        optimizer.load_state_dict(state["optimizer"])
+    else:
+        epoch = 0
+        iters = 0
+        batch_idx = 0
+        batch_size = None
+        
+    return model, optimizer, epoch, iters, batch_idx, batch_size

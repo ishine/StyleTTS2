@@ -23,6 +23,7 @@ from Utils.JDC.model import JDCNet
 from Utils.PLBERT.util import load_plbert
 
 from models import *
+from meldataset import build_dataloader, ResumableDataLoaderIterator
 from losses import *
 from utils import *
 
@@ -211,6 +212,8 @@ def main(config_path):
 
     saver = Saver(model, optimizer, config, epoch_tag = 'epoch_2nd')
         
+    ckpt_batch_size = None
+    ckpt_batch_idx = 0
     with accelerator.main_process_first():
         pretrained_model = config.get('pretrained_model', '')
         resume_model = saver.retrieve_best()
@@ -218,7 +221,9 @@ def main(config_path):
             logging.info(f'Loading 2nd stage resume model from {resume_model}')
             logging.info('(Ignoring pretrained model parameter/first stage.)')
             assert (Path(resume_model).stem.startswith('epoch_2nd_'))
-            model, optimizer, start_epoch, iters = load_checkpoint(model,  optimizer, resume_model,
+            (model, optimizer, start_epoch, iters,
+                ckpt_batch_idx, ckpt_batch_size) = load_checkpoint2(
+                model, optimizer, resume_model,
                 load_only_params=False, use_moduleprefix=distributed) # by definition of resuming
             model_loaded = True
         elif pretrained_model.startswith("epoch_1st"):
@@ -228,7 +233,9 @@ def main(config_path):
                 first_stage_path = osp.join(log_dir, first_stage_path)
                 logging.info(f'Loading first stage model from {first_stage_path}')
                 print('Loading the first stage model at %s ...' % first_stage_path)
-                model, _, start_epoch, iters = load_checkpoint(model, 
+                (model, _, start_epoch, iters,
+                    ckpt_batch_idx, ckpt_batch_size) = load_checkpoint2(
+                    model,
                     None, 
                     first_stage_path,
                     load_only_params=True,
@@ -247,11 +254,21 @@ def main(config_path):
                 f'({pretrained_model})')
             if not os.path.exists(pretrained_model):
                 pretrained_model = os.path.join(log_dir, pretrained_model)
-            model, optimizer, start_epoch, iters = load_checkpoint(model, optimizer, pretrained_model,
-                load_only_params=True, use_moduleprefix=distributed)
+            (model, optimizer, start_epoch, iters,
+                ckpt_batch_idx, ckpt_batch_size) = load_checkpoint2(
+                    model, optimizer, pretrained_model,
+                    load_only_params=True, use_moduleprefix=distributed)
             model_loaded = True
         else:
             logging.info('Starting fresh run')
+
+    batch_idx = ckpt_batch_idx
+    if ckpt_batch_size is not None:
+        if ckpt_batch_size != batch_size:
+            batch_idx = (ckpt_batch_idx * ckpt_batch_size) // batch_size
+            logging.info(
+                f'Batch size mismatch (checkpoint: {ckpt_batch_size}, '
+                f'config: {batch_size}); recalculating batch index to {batch_idx}')
 
     # adjust BERT learning rate
     for g in optimizer.optimizers['bert'].param_groups:
@@ -325,7 +342,8 @@ def main(config_path):
         if epoch >= diff_epoch:
             start_ds = True
 
-        for i, batch in enumerate(train_dataloader):
+        for i, batch in ResumableDataLoaderIterator(
+            train_dataloader, batch_idx):
             waves = batch[0]
             batch = [b.to(device) for b in batch[1:]]
             texts, input_lengths, ref_texts, ref_lengths, mels, mel_input_length, ref_mels = batch
@@ -652,7 +670,7 @@ def main(config_path):
                 val_loss = None
             else:
                 val_loss = loss_test / iters_test
-            saver.step_hook(epoch, iters, val_loss)
+            saver.step_hook(epoch, iters, val_loss, i, batch_size)
                 
         loss_test = 0
         loss_align = 0
@@ -883,7 +901,7 @@ def main(config_path):
             if (loss_test / iters_test) < best_loss:
                 best_loss = loss_test / iters_test
                                 
-            saver.epoch_hook(epoch, iters, loss_test / iters_test)
+            saver.epoch_hook(epoch+1, iters, loss_test / iters_test, 0, batch_size)
                                 
             if epoch % saving_epoch == 0:
                 if (loss_test / iters_test) < best_loss:

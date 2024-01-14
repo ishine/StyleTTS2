@@ -22,7 +22,7 @@ import torchaudio
 import librosa
 
 from models import *
-from meldataset import build_dataloader
+from meldataset import build_dataloader, ResumableDataLoaderIterator
 from utils import *
 from losses import *
 from optimizers import build_optimizer
@@ -168,25 +168,40 @@ def main(config_path):
         optimizer.schedulers[k] = accelerator.prepare(optimizer.schedulers[k])
     
     saver = Saver(model, optimizer, config, epoch_tag = 'epoch_1st')
+
+    ckpt_batch_size = None
+    ckpt_batch_idx = 0
     with accelerator.main_process_first():
         pretrained_model = config.get('pretrained_model', '')
         resume_model = saver.retrieve_best()
         if config.get('resume', False) and (resume_model is not None):
             logging.info(f'Resume model from {resume_model}')
             assert (Path(resume_model).stem.startswith('epoch_1st_'))
-            model, optimizer, start_epoch, iters = load_checkpoint(model,  optimizer, resume_model,
-                load_only_params=False) # by definition of resuming
+            (model, optimizer, start_epoch, iters,
+                ckpt_batch_idx, ckpt_batch_size) = load_checkpoint2(
+                    model,  optimizer, resume_model,
+                    load_only_params=False) # by definition of resuming
         elif pretrained_model != '':
             logging.info(f'Loading from pretrained model ({pretrained_model})')
             if not os.path.exists(pretrained_model):
                 pretrained_model = os.path.join(log_dir, pretrained_model)
             assert (Path(pretrained_model).stem.startswith('epoch_1st_'))
-            model, optimizer, start_epoch, iters = load_checkpoint(model,  optimizer, pretrained_model,
+            (model, optimizer, start_epoch, iters,
+                ckpt_batch_idx, ckpt_batch_size) = load_checkpoint2(
+                model,  optimizer, pretrained_model,
                 load_only_params=config.get('load_only_params', True))
         else:
             logging.info('Starting fresh run')
             start_epoch = 0
             iters = 0
+
+    batch_idx = ckpt_batch_idx
+    if ckpt_batch_size is not None:
+        if ckpt_batch_size != batch_size:
+            batch_idx = (ckpt_batch_idx * ckpt_batch_size) // batch_size
+            logging.info(
+                f'Batch size mismatch (checkpoint: {ckpt_batch_size}, '
+                f'config: {batch_size}); recalculating batch index to {batch_idx}')
     
     # in case not distributed
     try:
@@ -222,7 +237,8 @@ def main(config_path):
             sys.exit(0)
         signal.signal(signal.SIGTERM, sigterm_handler)
 
-        for i, batch in enumerate(train_dataloader):
+        for i, batch in ResumableDataLoaderIterator(
+            train_dataloader, batch_idx):
             waves = batch[0]
             batch = [b.to(device) for b in batch[1:]]
             texts, input_lengths, _, _, mels, mel_input_length, _ = batch
@@ -371,7 +387,7 @@ def main(config_path):
                 val_loss = None
             else:
                 val_loss = loss_test / iters_test
-            saver.step_hook(epoch, iters, val_loss)
+            saver.step_hook(epoch, iters, val_loss, i, batch_size)
                                 
         loss_test = 0
 
@@ -466,7 +482,7 @@ def main(config_path):
             if (loss_test / iters_test) < best_loss:
                 best_loss = loss_test / iters_test
 
-            saver.epoch_hook(epoch, iters, loss_test / iters_test)
+            saver.epoch_hook(epoch+1, iters, loss_test / iters_test, 0, batch_size)
                                 
     if accelerator.is_main_process:
         print('Saving..')
