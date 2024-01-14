@@ -268,6 +268,7 @@ def ml_main(config_path):
                 f'config: {batch_size}); recalculating batch index to {batch_idx}')
 
     start_idx = ckpt_batch_idx
+    logging.info(f"Start index set to {ckpt_batch_idx}")
 
     # adjust BERT learning rate
     for g in optimizer.optimizers['bert'].param_groups:
@@ -327,23 +328,25 @@ def ml_main(config_path):
         model.msd.train()
         model.mpd.train()
 
-        def sigterm_handler(signum, frame):
-            logging.info("SIGTERM received, attempting save...")
-            if loss_test is None:
-                val_loss = None
-            else:
-                val_loss = loss_test / iters_test
-            saver.try_save(epoch, iters, val_loss)
-            logging.info("Save completed")
-            sys.exit(0)
-        signal.signal(signal.SIGTERM, sigterm_handler)
-
         if epoch >= diff_epoch:
             start_ds = True
 
         for i, batch in enumerate(train_dataloader):
-            if i <= start_idx:
-                continue
+            
+            with torch.no_grad():
+                if i < start_idx:
+                    continue
+                def sigterm_handler(signum, frame):
+                    logging.info("SIGTERM received, attempting save...")
+                    if loss_test is None:
+                        val_loss = None
+                    else:
+                        val_loss = loss_test / iters_test
+                    saver.try_save(epoch, iters, val_loss, i, batch_size)
+                    logging.info("Save completed")
+                    sys.exit(0)
+                signal.signal(signal.SIGTERM, sigterm_handler)
+
             waves = batch[0]
             batch = [b.to(device) for b in batch[1:]]
             texts, input_lengths, ref_texts, ref_lengths, mels, mel_input_length, ref_mels = batch

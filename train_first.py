@@ -201,6 +201,7 @@ def ml_main(config_path):
                 f'config: {batch_size}); recalculating batch index to {batch_idx}')
 
     start_idx = ckpt_batch_idx
+    logging.info(f"Start index set to {ckpt_batch_idx}")
     
     # in case not distributed
     try:
@@ -225,20 +226,22 @@ def ml_main(config_path):
         start_time = time.time()
 
         _ = [model[key].train() for key in model]
-        def sigterm_handler(signum, frame):
-            logging.info("SIGTERM received, attempting save...")
-            if loss_test is None:
-                val_loss = None
-            else:
-                val_loss = loss_test / iters_test
-            saver.try_save(epoch, iters, val_loss)
-            logging.info("Save completed")
-            sys.exit(0)
-        signal.signal(signal.SIGTERM, sigterm_handler)
-
         for i, batch in enumerate(train_dataloader):
-            if i <= start_idx:
-                continue
+            with torch.no_grad():
+                if i < start_idx:
+                    logging.info(f"Skipping {i}")
+                    continue
+                def sigterm_handler(signum, frame):
+                    logging.info("SIGTERM received, attempting save...")
+                    if loss_test is None:
+                        val_loss = None
+                    else:
+                        val_loss = loss_test / iters_test
+                    saver.try_save(epoch, iters, val_loss, i, batch_size)
+                    logging.info("Save completed")
+                    sys.exit(0)
+                signal.signal(signal.SIGTERM, sigterm_handler)
+
             waves = batch[0]
             batch = [b.to(device) for b in batch[1:]]
             texts, input_lengths, _, _, mels, mel_input_length, _ = batch
@@ -355,6 +358,9 @@ def ml_main(config_path):
                 g_loss = loss_mel
             
             running_loss += accelerator.gather(loss_mel).mean().item()
+
+            #import pdb
+            #pdb.set_trace()
 
             accelerator.backward(g_loss)
             
