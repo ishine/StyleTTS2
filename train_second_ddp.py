@@ -57,9 +57,7 @@ handler = StreamHandler()
 handler.setLevel(logging.INFO)
 logger.addHandler(handler)
 
-@click.command()
-@click.option('-p', '--config_path', default='Configs/config.yml', type=str)
-def main(config_path):
+def ml_main(config_path):
     config = yaml.safe_load(open(config_path))
     
     log_dir = config['log_dir']
@@ -913,6 +911,17 @@ def main(config_path):
                     
                     with open(osp.join(log_dir, osp.basename(config_path)), 'w') as outfile:
                         yaml.dump(config, outfile, default_flow_style=True)
+
+@click.command()
+@click.option('-p', '--config_path', default='Configs/config.yml', type=str)
+def main(config_path):
+    try:
+        ml_main(config_path)
+    except RuntimeError as e:
+        if "CUDA out of memory" in str(e):
+            # HF accelerate intercepts exit codes and always exits 1,
+            # so we need to use a file to signal this instead
+            open("oom_status", "w").close()
         
 if __name__=="__main__":
     main()

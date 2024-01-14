@@ -53,9 +53,7 @@ def print_memory(tag : str = ""):
             f"( {torch.cuda.memory_allocated():.9e}"
             f" / {torch.cuda.max_memory_allocated():.9e} )")
 
-@click.command()
-@click.option('-p', '--config_path', default='Configs/config.yml', type=str)
-def main(config_path):
+def ml_main(config_path):
     config = yaml.safe_load(open(config_path))
 
     log_dir = config['log_dir']
@@ -496,7 +494,16 @@ def main(config_path):
         save_path = osp.join(log_dir, config.get('first_stage_path', 'first_stage.pth'))
         torch.save(state, save_path)
 
+@click.command()
+@click.option('-p', '--config_path', default='Configs/config.yml', type=str)
+def main(config_path):
+    try:
+        ml_main(config_path)
+    except RuntimeError as e:
+        if "CUDA out of memory" in str(e):
+            # HF accelerate intercepts exit codes and always exits 1,
+            # so we need to use a file to signal this instead
+            open("oom_status", "w").close()
         
-    
 if __name__=="__main__":
     main()
