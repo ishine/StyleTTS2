@@ -63,7 +63,7 @@ def ml_main(config_path):
     log_dir = config['log_dir']
     if not osp.exists(log_dir): os.makedirs(log_dir, exist_ok=True)
     shutil.copy(config_path, osp.join(log_dir, osp.basename(config_path)))
-    ddp_kwargs = DistributedDataParallelKwargs(find_unused_parameters=False,
+    ddp_kwargs = DistributedDataParallelKwargs(find_unused_parameters=True,
         broadcast_buffers=False,
         )
     accelerator = Accelerator(project_dir=log_dir, split_batches=True, kwargs_handlers=[ddp_kwargs])    
@@ -559,8 +559,18 @@ def ml_main(config_path):
                     loss_params.lambda_diff * loss_diff
 
             if distributed:
+                #with torch.autograd.set_detect_anomaly(True):
+                    #import pdb
                 running_loss += accelerator.gather(loss_mel).mean().item()
+                #pdb.set_trace()
                 accelerator.backward(g_loss)
+
+                    # The scaler is supposed to skip nan losses,
+                    # but cuda pukes before we get to the optimizer.
+                    # RuntimeError: CUDA driver error: invalid argument
+                    # The real question is, why am I able to run this
+                    # with actual nan losses on the actual production machine
+                    # but not here?
             else:
                 running_loss += loss_mel.item()
                 g_loss.backward()
