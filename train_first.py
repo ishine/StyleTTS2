@@ -229,7 +229,6 @@ def ml_main(config_path):
         for i, batch in enumerate(train_dataloader):
             with torch.no_grad():
                 if i < start_idx:
-                    logging.info(f"Skipping {i}")
                     continue
                 def sigterm_handler(signum, frame):
                     logging.info("SIGTERM received, attempting save...")
