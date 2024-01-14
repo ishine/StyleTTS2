@@ -23,7 +23,7 @@ from Utils.JDC.model import JDCNet
 from Utils.PLBERT.util import load_plbert
 
 from models import *
-from meldataset import build_dataloader, ResumableDataLoaderIterator
+from meldataset import build_dataloader
 from losses import *
 from utils import *
 
@@ -260,13 +260,14 @@ def ml_main(config_path):
         else:
             logging.info('Starting fresh run')
 
-    batch_idx = ckpt_batch_idx
     if ckpt_batch_size is not None:
         if ckpt_batch_size != batch_size:
-            batch_idx = (ckpt_batch_idx * ckpt_batch_size) // batch_size
+            ckpt_batch_idx = (ckpt_batch_idx * ckpt_batch_size) // batch_size
             logging.info(
                 f'Batch size mismatch (checkpoint: {ckpt_batch_size}, '
                 f'config: {batch_size}); recalculating batch index to {batch_idx}')
+
+    start_idx = ckpt_batch_idx
 
     # adjust BERT learning rate
     for g in optimizer.optimizers['bert'].param_groups:
@@ -340,8 +341,9 @@ def ml_main(config_path):
         if epoch >= diff_epoch:
             start_ds = True
 
-        for i, batch in ResumableDataLoaderIterator(
-            train_dataloader, batch_idx):
+        for i, batch in enumerate(train_dataloader):
+            if i <= start_idx:
+                continue
             waves = batch[0]
             batch = [b.to(device) for b in batch[1:]]
             texts, input_lengths, ref_texts, ref_lengths, mels, mel_input_length, ref_mels = batch
@@ -669,6 +671,8 @@ def ml_main(config_path):
             else:
                 val_loss = loss_test / iters_test
             saver.step_hook(epoch, iters, val_loss, i, batch_size)
+
+        start_idx = 0
                 
         loss_test = 0
         loss_align = 0

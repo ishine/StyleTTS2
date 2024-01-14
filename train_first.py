@@ -22,7 +22,7 @@ import torchaudio
 import librosa
 
 from models import *
-from meldataset import build_dataloader, ResumableDataLoaderIterator
+from meldataset import build_dataloader
 from utils import *
 from losses import *
 from optimizers import build_optimizer
@@ -193,13 +193,14 @@ def ml_main(config_path):
             start_epoch = 0
             iters = 0
 
-    batch_idx = ckpt_batch_idx
     if ckpt_batch_size is not None:
         if ckpt_batch_size != batch_size:
-            batch_idx = (ckpt_batch_idx * ckpt_batch_size) // batch_size
+            ckpt_batch_idx = (ckpt_batch_idx * ckpt_batch_size) // batch_size
             logging.info(
                 f'Batch size mismatch (checkpoint: {ckpt_batch_size}, '
                 f'config: {batch_size}); recalculating batch index to {batch_idx}')
+
+    start_idx = ckpt_batch_idx
     
     # in case not distributed
     try:
@@ -235,8 +236,9 @@ def ml_main(config_path):
             sys.exit(0)
         signal.signal(signal.SIGTERM, sigterm_handler)
 
-        for i, batch in ResumableDataLoaderIterator(
-            train_dataloader, batch_idx):
+        for i, batch in enumerate(train_dataloader):
+            if i <= start_idx:
+                continue
             waves = batch[0]
             batch = [b.to(device) for b in batch[1:]]
             texts, input_lengths, _, _, mels, mel_input_length, _ = batch
@@ -387,6 +389,7 @@ def ml_main(config_path):
                 val_loss = loss_test / iters_test
             saver.step_hook(epoch, iters, val_loss, i, batch_size)
                                 
+        start_idx = 0
         loss_test = 0
 
         _ = [model[key].eval() for key in model]
