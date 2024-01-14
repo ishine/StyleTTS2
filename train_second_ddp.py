@@ -32,7 +32,7 @@ from Modules.diffusion.sampler import DiffusionSampler, ADPM2Sampler, KarrasSche
 
 from optimizers import build_optimizer
 
-from accelerate import Accelerator
+from accelerate import Accelerator, DistributedType
 from accelerate.utils import LoggerType
 from accelerate import DistributedDataParallelKwargs
 
@@ -63,12 +63,17 @@ def ml_main(config_path):
     log_dir = config['log_dir']
     if not osp.exists(log_dir): os.makedirs(log_dir, exist_ok=True)
     shutil.copy(config_path, osp.join(log_dir, osp.basename(config_path)))
-    ddp_kwargs = DistributedDataParallelKwargs(find_unused_parameters=True,
+    ddp_kwargs = DistributedDataParallelKwargs(find_unused_parameters=False,
         broadcast_buffers=False,
         )
     accelerator = Accelerator(project_dir=log_dir, split_batches=True, kwargs_handlers=[ddp_kwargs])    
     if accelerator.is_main_process:
         writer = SummaryWriter(log_dir + "/tensorboard")
+
+    distributed = (accelerator.distributed_type != DistributedType.NO)
+    if distributed:
+        logging.info("Running as distributed")
+
     writer = SummaryWriter(log_dir + "/tensorboard")
 
     # write logs
@@ -101,7 +106,10 @@ def ml_main(config_path):
     optimizer_params = Munch(config['optimizer_params'])
     
     train_list, val_list = get_data_path_list(train_path, val_path)
-    device = accelerator.device
+    if distributed:
+        device = accelerator.device
+    else:
+        device = 'cuda'
 
     with accelerator.main_process_first():
         # load pretrained ASR model
@@ -123,15 +131,14 @@ def ml_main(config_path):
     model = build_model(model_params, text_aligner, pitch_extractor, plbert)
     _ = [model[key].to(device) for key in model]
     
-    # DP
-    #for key in model:
-    #    if key != "mpd" and key != "msd" and key != "wd":
-    #        model[key] = MyDataParallel(model[key])
-
-    # DDP
-    for k in model:
-        model[k] = accelerator.prepare(model[k])
-    model.predictor._set_static_graph()
+    # DDP/DP
+    if distributed:
+        for k in model:
+            model[k] = accelerator.prepare(model[k])
+    else:
+        for key in model:
+            if key != "mpd" and key != "msd" and key != "wd":
+                model[key] = MyDataParallel(model[key])
 
     train_dataloader = build_dataloader(train_list,
                                         root_path,
@@ -153,9 +160,10 @@ def ml_main(config_path):
                                       dataset_config={})
     
 
-    train_dataloader, val_dataloader = accelerator.prepare(
-        train_dataloader, val_dataloader
-    )
+    if distributed:
+        train_dataloader, val_dataloader = accelerator.prepare(
+            train_dataloader, val_dataloader
+        )
             
     start_epoch = 0
     iters = 0
@@ -167,19 +175,19 @@ def ml_main(config_path):
                    sr, 
                    model_params.slm.sr).to(device)
 
-    #gl = MyDataParallel(gl)
-    #dl = MyDataParallel(dl)
-    #wl = MyDataParallel(wl)
-    gl = accelerator.prepare(gl)
-    dl = accelerator.prepare(dl)
-    wl = accelerator.prepare(wl)
-
-    try:
+    if distributed:
+        gl = accelerator.prepare(gl)
+        dl = accelerator.prepare(dl)
+        wl = accelerator.prepare(wl)
         n_down = model.text_aligner.module.n_down
-        distributed = True
-    except:
+    else:
+        gl = MyDataParallel(gl)
+        dl = MyDataParallel(dl)
+        wl = MyDataParallel(wl)
         n_down = model.text_aligner.n_down
-        distributed = False
+
+    if distributed:
+        model.predictor._set_static_graph()
     
     sampler = DiffusionSampler(
         model.diffusion.module.diffusion if distributed else model.diffusion.diffusion,
@@ -204,9 +212,10 @@ def ml_main(config_path):
         # Use higher epsilon for mixed precision training
         eps=1e-4 if accelerator.mixed_precision != 'no' else 1e-9)
 
-    for k, v in optimizer.optimizers.items():
-        optimizer.optimizers[k] = accelerator.prepare(optimizer.optimizers[k])
-        optimizer.schedulers[k] = accelerator.prepare(optimizer.schedulers[k])
+    if distributed:
+        for k, v in optimizer.optimizers.items():
+            optimizer.optimizers[k] = accelerator.prepare(optimizer.optimizers[k])
+            optimizer.schedulers[k] = accelerator.prepare(optimizer.schedulers[k])
 
     saver = Saver(model, optimizer, config, epoch_tag = 'epoch_2nd')
         
@@ -232,7 +241,7 @@ def ml_main(config_path):
                 logging.info(f'Loading first stage model from {first_stage_path}')
                 print('Loading the first stage model at %s ...' % first_stage_path)
                 (model, _, start_epoch, iters,
-                    ckpt_batch_idx, ckpt_batch_size) = load_checkpoint2(
+                    _, _) = load_checkpoint2(
                     model,
                     None, 
                     first_stage_path,
@@ -333,19 +342,18 @@ def ml_main(config_path):
 
         for i, batch in enumerate(train_dataloader):
             
-            with torch.no_grad():
-                if i < start_idx:
-                    continue
-                def sigterm_handler(signum, frame):
-                    logging.info("SIGTERM received, attempting save...")
-                    if loss_test is None:
-                        val_loss = None
-                    else:
-                        val_loss = loss_test / iters_test
-                    saver.try_save(epoch, iters, val_loss, i, batch_size)
-                    logging.info("Save completed")
-                    sys.exit(0)
-                signal.signal(signal.SIGTERM, sigterm_handler)
+            if i < start_idx:
+                continue
+            def sigterm_handler(signum, frame):
+                logging.info("SIGTERM received, attempting save...")
+                if loss_test is None:
+                    val_loss = None
+                else:
+                    val_loss = loss_test / iters_test
+                saver.try_save(epoch, iters, val_loss, i, batch_size)
+                logging.info("Save completed")
+                sys.exit(0)
+            signal.signal(signal.SIGTERM, sigterm_handler)
 
             waves = batch[0]
             batch = [b.to(device) for b in batch[1:]]
@@ -504,8 +512,10 @@ def ml_main(config_path):
             if start_ds:
                 optimizer.zero_grad()
                 d_loss = dl(wav.detach(), y_rec.detach()).mean()
-                accelerator.backward(d_loss)
-                #d_loss.backward()
+                if distributed:
+                    accelerator.backward(d_loss)
+                else:
+                    d_loss.backward()
                 optimizer.step('msd')
                 optimizer.step('mpd')
             else:
@@ -548,13 +558,17 @@ def ml_main(config_path):
                     loss_params.lambda_sty * loss_sty + \
                     loss_params.lambda_diff * loss_diff
 
-            running_loss += accelerator.gather(loss_mel).mean().item()
-            accelerator.backward(g_loss)
+            if distributed:
+                running_loss += accelerator.gather(loss_mel).mean().item()
+                accelerator.backward(g_loss)
+            else:
+                running_loss += loss_mel.item()
+                g_loss.backward()
             
             optimizer.step('bert_encoder')
             optimizer.step('bert')
             optimizer.step('predictor')
-            optimizer.step('predictor_encoder')
+            optimizer.step('predictor_encoder') 
             
             if epoch >= diff_epoch:
                 optimizer.step('diffusion')
@@ -732,8 +746,11 @@ def ml_main(config_path):
                                                         s2s_attn_mono, 
                                                         text_mask)
                     # get clips
-                    mel_input_length_all = accelerator.gather(mel_input_length) # for balanced load
-                    mel_len = min([int(mel_input_length_all.min().item() / 2 - 1), max_len // 2])
+                    if distributed:
+                        mel_input_length_all = accelerator.gather(mel_input_length) # for balanced load
+                        mel_len = min([int(mel_input_length_all.min().item() / 2 - 1), max_len // 2])
+                    else:
+                        mel_len = int(mel_input_length.min().item() / 2 - 1)
                     en = []
                     gt = []
                     p_en = []
@@ -786,9 +803,14 @@ def ml_main(config_path):
 
                     loss_F0 = F.l1_loss(F0_real, F0_fake) / 10
 
-                    loss_test += accelerator.gather(loss_mel).mean()
-                    loss_align += accelerator.gather(loss_dur).mean()
-                    loss_f += accelerator.gather(loss_F0).mean()
+                    if distributed:
+                        loss_test += accelerator.gather(loss_mel).mean()
+                        loss_align += accelerator.gather(loss_dur).mean()
+                        loss_f += accelerator.gather(loss_F0).mean()
+                    else:
+                        loss_test += loss_mel.mean()
+                        loss_align += loss_dur.mean()
+                        loss_f += loss_F0.mean()
 
                     iters_test += 1
                 except Exception as e:
