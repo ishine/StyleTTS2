@@ -274,7 +274,6 @@ def main(config_path):
     best_loss = float('inf')  # best test loss
     loss_train_record = list([])
     loss_test_record = list([])
-    iters = 0
     
     criterion = nn.L1Loss() # F0 loss (regression)
     torch.cuda.empty_cache()
