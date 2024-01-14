@@ -79,8 +79,6 @@ def main(config_path):
     logger.addHandler(file_handler)
     
     batch_size = config.get('batch_size', 10)
-    segmented_batch_size = config.get('segmented_batch_size', [16, 8, 6])
-    batch_size = segmented_batch_size[0]
 
     epochs = config.get('epochs_2nd', 200)
     save_freq = config.get('save_freq', 2)
@@ -106,25 +104,6 @@ def main(config_path):
     train_list, val_list = get_data_path_list(train_path, val_path)
     device = accelerator.device
 
-    train_dataloader = build_dataloader(train_list,
-                                        root_path,
-                                        OOD_data=OOD_data,
-                                        min_length=min_length,
-                                        batch_size=batch_size,
-                                        num_workers=2,
-                                        dataset_config={},
-                                        device=device)
-
-    val_dataloader = build_dataloader(val_list,
-                                      root_path,
-                                      OOD_data=OOD_data,
-                                      min_length=min_length,
-                                      batch_size=batch_size,
-                                      validation=True,
-                                      num_workers=0,
-                                      device=device,
-                                      dataset_config={})
-    
     with accelerator.main_process_first():
         # load pretrained ASR model
         ASR_config = config.get('ASR_config', False)
@@ -154,6 +133,26 @@ def main(config_path):
     for k in model:
         model[k] = accelerator.prepare(model[k])
     model.predictor._set_static_graph()
+
+    train_dataloader = build_dataloader(train_list,
+                                        root_path,
+                                        OOD_data=OOD_data,
+                                        min_length=min_length,
+                                        batch_size=batch_size,
+                                        num_workers=2,
+                                        dataset_config={},
+                                        device=device)
+
+    val_dataloader = build_dataloader(val_list,
+                                      root_path,
+                                      OOD_data=OOD_data,
+                                      min_length=min_length,
+                                      batch_size=batch_size,
+                                      validation=True,
+                                      num_workers=0,
+                                      device=device,
+                                      dataset_config={})
+    
 
     train_dataloader, val_dataloader = accelerator.prepare(
         train_dataloader, val_dataloader
@@ -322,56 +321,6 @@ def main(config_path):
             logging.info("Save completed")
             sys.exit(0)
         signal.signal(signal.SIGTERM, sigterm_handler)
-
-        if (segmented_batch_size and 
-            (epoch >= diff_epoch) and 
-            (epoch < joint_epoch) and
-            batch_size != segmented_batch_size[1]):
-            batch_size = segmented_batch_size[1]
-            print ("Entered diffusion segment; "
-                f"using batch size {batch_size}")
-            print ("Rebuilding dataloaders")
-            train_dataloader = build_dataloader(train_list,
-                root_path,
-                OOD_data=OOD_data,
-                min_length=min_length,
-                batch_size=batch_size,
-                num_workers=2,
-                dataset_config={},
-                device=device)
-            val_dataloader = build_dataloader(val_list,
-                root_path,
-                OOD_data=OOD_data,
-                min_length=min_length,
-                batch_size=batch_size,
-                validation=True,
-                num_workers=0,
-                device=device,
-                dataset_config={})
-        elif (segmented_batch_size and 
-            (epoch >= joint_epoch) and 
-            batch_size != segmented_batch_size[2]):
-            batch_size = segmented_batch_size[2]
-            print ("Entered joint slmadv training segment; "
-                f"using batch size {batch_size}")
-            print ("Rebuilding dataloaders")
-            train_dataloader = build_dataloader(train_list,
-                root_path,
-                OOD_data=OOD_data,
-                min_length=min_length,
-                batch_size=batch_size,
-                num_workers=2,
-                dataset_config={},
-                device=device)
-            val_dataloader = build_dataloader(val_list,
-                root_path,
-                OOD_data=OOD_data,
-                min_length=min_length,
-                batch_size=batch_size,
-                validation=True,
-                num_workers=0,
-                device=device,
-                dataset_config={})
 
         if epoch >= diff_epoch:
             start_ds = True
