@@ -535,7 +535,7 @@ def main(config_path):
                 optimizer.zero_grad()
                 d_loss = dl(wav.detach(), y_rec.detach()).mean()
                 accelerator.backward(d_loss)
-                d_loss.backward()
+                #d_loss.backward()
                 optimizer.step('msd')
                 optimizer.step('mpd')
             else:
@@ -637,17 +637,30 @@ def main(config_path):
                             if p.grad is not None:
                                 p.grad *= (1 / total_norm['predictor']) 
 
-                for p in model.predictor.duration_proj.parameters():
-                    if p.grad is not None:
-                        p.grad *= slmadv_params.scale
+                if distributed:
+                    for p in model.predictor.module.duration_proj.parameters():
+                        if p.grad is not None:
+                            p.grad *= slmadv_params.scale
 
-                for p in model.predictor.lstm.parameters():
-                    if p.grad is not None:
-                        p.grad *= slmadv_params.scale
+                    for p in model.predictor.module.lstm.parameters():
+                        if p.grad is not None:
+                            p.grad *= slmadv_params.scale
 
-                for p in model.diffusion.parameters():
-                    if p.grad is not None:
-                        p.grad *= slmadv_params.scale
+                    for p in model.diffusion.parameters():
+                        if p.grad is not None:
+                            p.grad *= slmadv_params.scale
+                else:
+                    for p in model.predictor.duration_proj.parameters():
+                        if p.grad is not None:
+                            p.grad *= slmadv_params.scale
+
+                    for p in model.predictor.lstm.parameters():
+                        if p.grad is not None:
+                            p.grad *= slmadv_params.scale
+
+                    for p in model.diffusion.parameters():
+                        if p.grad is not None:
+                            p.grad *= slmadv_params.scale
 
                 optimizer.step('bert_encoder')
                 optimizer.step('bert')
@@ -880,11 +893,18 @@ def main(config_path):
                         s = s_pred[:, 128:]
                         ref = s_pred[:, :128]
 
-                        d = model.predictor.text_encoder(d_en[bib, :, :input_lengths[bib]].unsqueeze(0), 
-                                                        s, input_lengths[bib, ...].unsqueeze(0), text_mask[bib, :input_lengths[bib]].unsqueeze(0))
+                        if distributed:
+                            d = model.predictor.module.text_encoder(d_en[bib, :, :input_lengths[bib]].unsqueeze(0), 
+                                                            s, input_lengths[bib, ...].unsqueeze(0), text_mask[bib, :input_lengths[bib]].unsqueeze(0))
 
-                        x, _ = model.predictor.lstm(d)
-                        duration = model.predictor.duration_proj(x)
+                            x, _ = model.predictor.module.lstm(d)
+                            duration = model.predictor.module.duration_proj(x)
+                        else:
+                            d = model.predictor.text_encoder(d_en[bib, :, :input_lengths[bib]].unsqueeze(0), 
+                                                            s, input_lengths[bib, ...].unsqueeze(0), text_mask[bib, :input_lengths[bib]].unsqueeze(0))
+
+                            x, _ = model.predictor.lstm(d)
+                            duration = model.predictor.duration_proj(x)
 
                         duration = torch.sigmoid(duration).sum(axis=-1)
                         pred_dur = torch.round(duration.squeeze(0)).clamp(min=1)
@@ -899,7 +919,10 @@ def main(config_path):
 
                         # encode prosody
                         en = (d.transpose(-1, -2) @ pred_aln_trg.unsqueeze(0).to(texts.device))
-                        F0_pred, N_pred = model.predictor.F0Ntrain(en, s)
+                        if distributed:
+                            F0_pred, N_pred = model.predictor.module.F0Ntrain(en, s)
+                        else:
+                            F0_pred, N_pred = model.predictor.F0Ntrain(en, s)
                         out = model.decoder((t_en[bib, :, :input_lengths[bib]].unsqueeze(0) @ pred_aln_trg.unsqueeze(0).to(texts.device)), 
                                                 F0_pred, N_pred, ref.squeeze(0).unsqueeze(0))
 
