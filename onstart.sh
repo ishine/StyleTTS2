@@ -1,1 +1,1 @@
-(cd /root/StyleTTS2; accelerate launch --mixed_precision=fp16 train_second_ddp.py --config_path ./Configs/config_resume.yml)
+(cd /root/StyleTTS2; ./train_second_resume.sh)
