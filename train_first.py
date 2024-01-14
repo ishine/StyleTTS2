@@ -503,7 +503,11 @@ def main(config_path):
         if "CUDA out of memory" in str(e):
             # HF accelerate intercepts exit codes and always exits 1,
             # so we need to use a file to signal this instead
+            logging.warn("Out of memory error encountered. Setting OOM flag file...")
             open("oom_status", "w").close()
+            logging.warn("Set")
+        else:
+            raise
         
 if __name__=="__main__":
     main()
