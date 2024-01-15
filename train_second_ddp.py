@@ -328,7 +328,7 @@ def ml_main(config_path):
                                )
     if distributed:
         slmadv = accelerator.prepare(slmadv)
-        slmadv._set_static_graph()
+        #slmadv._set_static_graph()
     else:
         slmadv = MyDataParallel(slmadv)
 
@@ -614,73 +614,72 @@ def ml_main(config_path):
                                 ref_texts, 
                                 ref_lengths, use_ind, s_trg.detach(), ref if multispeaker else None)
 
-                if slm_out is None:
-                    continue
+                if slm_out is not None:
+                    d_loss_slm, loss_gen_lm, y_pred = slm_out
                     
-                d_loss_slm, loss_gen_lm, y_pred = slm_out
-                
-                # SLM generator loss
-                optimizer.zero_grad()
-                if distributed:
-                    accelerator.backward(loss_gen_lm)
-                else:
-                    loss_gen_lm.backward()
-
-                # compute the gradient norm
-                total_norm = {}
-                for key in model.keys():
-                    total_norm[key] = 0
-                    parameters = [p for p in model[key].parameters() if p.grad is not None and p.requires_grad]
-                    for p in parameters:
-                        param_norm = p.grad.detach().data.norm(2)
-                        total_norm[key] += param_norm.item() ** 2
-                    total_norm[key] = total_norm[key] ** 0.5
-
-                # gradient scaling
-                if total_norm['predictor'] > slmadv_params.thresh:
-                    for key in model.keys():
-                        for p in model[key].parameters():
-                            if p.grad is not None:
-                                p.grad *= (1 / total_norm['predictor']) 
-
-                if distributed:
-                    for p in model.predictor.module.duration_proj.parameters():
-                        if p.grad is not None:
-                            p.grad *= slmadv_params.scale
-
-                    for p in model.predictor.module.lstm.parameters():
-                        if p.grad is not None:
-                            p.grad *= slmadv_params.scale
-
-                    for p in model.diffusion.parameters():
-                        if p.grad is not None:
-                            p.grad *= slmadv_params.scale
-                else:
-                    for p in model.predictor.duration_proj.parameters():
-                        if p.grad is not None:
-                            p.grad *= slmadv_params.scale
-
-                    for p in model.predictor.lstm.parameters():
-                        if p.grad is not None:
-                            p.grad *= slmadv_params.scale
-
-                    for p in model.diffusion.parameters():
-                        if p.grad is not None:
-                            p.grad *= slmadv_params.scale
-
-                optimizer.step('bert_encoder')
-                optimizer.step('bert')
-                optimizer.step('predictor')
-                optimizer.step('diffusion')
-
-                # SLM discriminator loss
-                if d_loss_slm != 0:
+                    # SLM generator loss
                     optimizer.zero_grad()
+                    # retain_graph was never modified after #74 changed the calling order.
                     if distributed:
-                        accelerator.backward(d_loss_slm, retain_graph=True)
+                        accelerator.backward(loss_gen_lm, retain_graph=True)
                     else:
-                        d_loss_slm.backward(retain_graph=True)
-                    optimizer.step('wd')
+                        loss_gen_lm.backward(retain_graph=True)
+
+                    # compute the gradient norm
+                    total_norm = {}
+                    for key in model.keys():
+                        total_norm[key] = 0
+                        parameters = [p for p in model[key].parameters() if p.grad is not None and p.requires_grad]
+                        for p in parameters:
+                            param_norm = p.grad.detach().data.norm(2)
+                            total_norm[key] += param_norm.item() ** 2
+                        total_norm[key] = total_norm[key] ** 0.5
+
+                    # gradient scaling
+                    if total_norm['predictor'] > slmadv_params.thresh:
+                        for key in model.keys():
+                            for p in model[key].parameters():
+                                if p.grad is not None:
+                                    p.grad *= (1 / total_norm['predictor']) 
+
+                    if distributed:
+                        for p in model.predictor.module.duration_proj.parameters():
+                            if p.grad is not None:
+                                p.grad *= slmadv_params.scale
+
+                        for p in model.predictor.module.lstm.parameters():
+                            if p.grad is not None:
+                                p.grad *= slmadv_params.scale
+
+                        for p in model.diffusion.parameters():
+                            if p.grad is not None:
+                                p.grad *= slmadv_params.scale
+                    else:
+                        for p in model.predictor.duration_proj.parameters():
+                            if p.grad is not None:
+                                p.grad *= slmadv_params.scale
+
+                        for p in model.predictor.lstm.parameters():
+                            if p.grad is not None:
+                                p.grad *= slmadv_params.scale
+
+                        for p in model.diffusion.parameters():
+                            if p.grad is not None:
+                                p.grad *= slmadv_params.scale
+
+                    optimizer.step('bert_encoder')
+                    optimizer.step('bert')
+                    optimizer.step('predictor')
+                    optimizer.step('diffusion')
+
+                    # SLM discriminator loss
+                    if d_loss_slm != 0:
+                        optimizer.zero_grad()
+                        if distributed:
+                            accelerator.backward(d_loss_slm)
+                        else:
+                            d_loss_slm.backward()
+                        optimizer.step('wd')
 
             else:
                 d_loss_slm, loss_gen_lm = 0, 0

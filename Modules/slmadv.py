@@ -228,7 +228,7 @@ class SLMAdversarialLoss(torch.nn.Module):
         # generator loss
         if self.distributed:
             gen_loss = self.wl.module.generator(y_pred.squeeze())
-            gen_loss = accelerator.gather(gen_loss).mean()
+            gen_loss = gen_loss.mean()
         else:
             gen_loss = self.wl.generator(y_pred.squeeze())
             gen_loss = gen_loss.mean()
