@@ -274,7 +274,7 @@ def ml_main(config_path):
             ckpt_batch_idx = (ckpt_batch_idx * ckpt_batch_size) // batch_size
             logging.info(
                 f'Batch size mismatch (checkpoint: {ckpt_batch_size}, '
-                f'config: {batch_size}); recalculating batch index to {batch_idx}')
+                f'config: {batch_size}); recalculating batch index to {ckpt_batch_idx}')
 
     start_idx = ckpt_batch_idx
     logging.info(f"Start index set to {ckpt_batch_idx}")
