@@ -272,6 +272,7 @@ def ml_main(config_path):
     if ckpt_batch_size is not None:
         if ckpt_batch_size != batch_size:
             ckpt_batch_idx = (ckpt_batch_idx * ckpt_batch_size) // batch_size
+            ckpt_batch_idx = min(ckpt_batch_idx, len(train_dataloader) - 1)
             logging.info(
                 f'Batch size mismatch (checkpoint: {ckpt_batch_size}, '
                 f'config: {batch_size}); recalculating batch index to {ckpt_batch_idx}')
