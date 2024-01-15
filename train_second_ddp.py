@@ -319,7 +319,8 @@ def ml_main(config_path):
                                 slmadv_params.max_len,
                                 batch_percentage=slmadv_params.batch_percentage,
                                 skip_update=slmadv_params.iter, 
-                                sig=slmadv_params.sig
+                                sig=slmadv_params.sig,
+                                distributed=distributed
                                )
 
     loss_test = None
