@@ -613,7 +613,10 @@ def ml_main(config_path):
                 
                 # SLM generator loss
                 optimizer.zero_grad()
-                loss_gen_lm.backward()
+                if distributed:
+                    accelerator.backward(loss_gen_lm)
+                else:
+                    loss_gen_lm.backward()
 
                 # compute the gradient norm
                 total_norm = {}
@@ -665,7 +668,10 @@ def ml_main(config_path):
                 # SLM discriminator loss
                 if d_loss_slm != 0:
                     optimizer.zero_grad()
-                    d_loss_slm.backward(retain_graph=True)
+                    if distributed:
+                        accelerator.backward(d_loss_slm, retain_graph=True)
+                    else:
+                        d_loss_slm.backward(retain_graph=True)
                     optimizer.step('wd')
 
             else:
