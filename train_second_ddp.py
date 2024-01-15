@@ -328,6 +328,7 @@ def ml_main(config_path):
                                )
     if distributed:
         slmadv = accelerator.prepare(slmadv)
+        slmadv._set_static_graph()
     else:
         slmadv = MyDataParallel(slmadv)
 
@@ -519,11 +520,10 @@ def ml_main(config_path):
 
             if start_ds:
                 optimizer.zero_grad()
+                d_loss = dl(wav.detach(), y_rec.detach()).mean()
                 if distributed:
-                    d_loss = accelerator.gather(dl(wav.detach(), y_rec.detach())).mean()
                     accelerator.backward(d_loss)
                 else:
-                    d_loss = dl(wav.detach(), y_rec.detach()).mean()
                     d_loss.backward()
                 optimizer.step('msd')
                 optimizer.step('mpd')
