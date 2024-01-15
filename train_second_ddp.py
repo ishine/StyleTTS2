@@ -17,6 +17,8 @@ warnings.simplefilter('ignore')
 from torch.utils.tensorboard import SummaryWriter
 
 from meldataset import build_dataloader
+import faulthandler
+faulthandler.register(signal.SIGUSR1)
 
 from Utils.ASR.models import ASRCNN
 from Utils.JDC.model import JDCNet
@@ -343,7 +345,6 @@ def ml_main(config_path):
             start_ds = True
 
         for i, batch in enumerate(train_dataloader):
-            
             if i < start_idx:
                 continue
             def sigterm_handler(signum, frame):
