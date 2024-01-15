@@ -18,6 +18,7 @@ from torch.utils.tensorboard import SummaryWriter
 
 from meldataset import build_dataloader
 import faulthandler
+import signal
 faulthandler.register(signal.SIGUSR1)
 
 from Utils.ASR.models import ASRCNN
