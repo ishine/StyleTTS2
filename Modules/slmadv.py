@@ -17,7 +17,9 @@ class SLMAdversarialLoss(torch.nn.Module):
         self.sig = sig
         self.skip_update = skip_update
         
-    def forward(self, iters, y_rec_gt, y_rec_gt_pred, waves, mel_input_length, ref_text, ref_lengths, use_ind, s_trg, ref_s=None):
+    def forward(self, iters, y_rec_gt, y_rec_gt_pred, waves, mel_input_length,
+                ref_text, ref_lengths, use_ind, s_trg, ref_s=None,
+                distributed=False):
         text_mask = length_to_mask(ref_lengths).to(ref_text.device)
         bert_dur = self.model.bert(ref_text, attention_mask=(~text_mask).int())
         d_en = self.model.bert_encoder(bert_dur).transpose(-1, -2) 
@@ -110,6 +112,7 @@ class SLMAdversarialLoss(torch.nn.Module):
             mel_length_pred = output_lengths[bib]
             mel_length_gt = int(mel_input_length[bib].item() / 2)
             if mel_length_gt <= mel_len or mel_length_pred <= mel_len:
+                #print(f"skip. mel_len: {mel_len}, mel_len_gt: {mel_length_gt}, mel_len_pred: {mel_length_pred}")
                 continue
 
             sp.append(s_preds[bib])
@@ -134,7 +137,10 @@ class SLMAdversarialLoss(torch.nn.Module):
         en = torch.stack(en)
         p_en = torch.stack(p_en)
         
-        F0_fake, N_fake = self.model.predictor.F0Ntrain(p_en, sp[:, 128:])
+        if distributed:
+            F0_fake, N_fake = self.model.predictor.module.F0Ntrain(p_en, sp[:, 128:])
+        else:
+            F0_fake, N_fake = self.model.predictor.F0Ntrain(p_en, sp[:, 128:])
         y_pred = self.model.decoder(en, F0_fake, N_fake, sp[:, :128])
         
         # discriminator loss
