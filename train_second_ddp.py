@@ -592,6 +592,7 @@ def ml_main(config_path):
             if epoch >= diff_epoch:
                 optimizer.step('diffusion')
             
+            d_loss_slm, loss_gen_lm = 0, 0
             if epoch >= joint_epoch:
                 optimizer.step('style_encoder')
                 optimizer.step('decoder')
@@ -621,9 +622,9 @@ def ml_main(config_path):
                     optimizer.zero_grad()
                     # retain_graph was never modified after #74 changed the calling order.
                     if distributed:
-                        accelerator.backward(loss_gen_lm, retain_graph=True)
+                        accelerator.backward(loss_gen_lm)
                     else:
-                        loss_gen_lm.backward(retain_graph=True)
+                        loss_gen_lm.backward()
 
                     # compute the gradient norm
                     total_norm = {}
@@ -676,13 +677,10 @@ def ml_main(config_path):
                     if d_loss_slm != 0:
                         optimizer.zero_grad()
                         if distributed:
-                            accelerator.backward(d_loss_slm)
+                            accelerator.backward(d_loss_slm, retain_graph=True)
                         else:
-                            d_loss_slm.backward()
+                            d_loss_slm.backward(retain_graph=True)
                         optimizer.step('wd')
-
-            else:
-                d_loss_slm, loss_gen_lm = 0, 0
                 
             iters = iters + 1
             
