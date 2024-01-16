@@ -54,11 +54,12 @@ class MyDataParallel(torch.nn.DataParallel):
 
 import logging
 from logging import StreamHandler
-logger = logging.getLogger(__name__)
+from accelerate.logging import get_logger
+logger = get_logger(__name__)
 logger.setLevel(logging.INFO)
 handler = StreamHandler()
 handler.setLevel(logging.INFO)
-logger.addHandler(handler)
+logger.logger.addHandler(handler)
 
 def ml_main(config_path):
     config = yaml.safe_load(open(config_path))
@@ -83,7 +84,7 @@ def ml_main(config_path):
     file_handler = logging.FileHandler(osp.join(log_dir, 'train.log'))
     file_handler.setLevel(logging.DEBUG)
     file_handler.setFormatter(logging.Formatter('%(levelname)s:%(asctime)s: %(message)s'))
-    logger.addHandler(file_handler)
+    logger.logger.addHandler(file_handler)
     
     batch_size = config.get('batch_size', 10)
 
@@ -326,11 +327,11 @@ def ml_main(config_path):
                                 sig=slmadv_params.sig,
                                 distributed=distributed
                                )
-    if distributed:
-        slmadv = accelerator.prepare(slmadv)
-        #slmadv._set_static_graph()
-    else:
-        slmadv = MyDataParallel(slmadv)
+    #if distributed:
+    #    slmadv = accelerator.prepare(slmadv)
+    #    #slmadv._set_static_graph()
+    #else:
+    #    slmadv = MyDataParallel(slmadv)
 
     loss_test = None
     iters_test = None
@@ -568,18 +569,8 @@ def ml_main(config_path):
                     loss_params.lambda_diff * loss_diff
 
             if distributed:
-                #with torch.autograd.set_detect_anomaly(True):
-                    #import pdb
                 running_loss += accelerator.gather(loss_mel).mean().item()
-                #pdb.set_trace()
                 accelerator.backward(g_loss)
-
-                    # The scaler is supposed to skip nan losses,
-                    # but cuda pukes before we get to the optimizer.
-                    # RuntimeError: CUDA driver error: invalid argument
-                    # The real question is, why am I able to run this
-                    # with actual nan losses on the actual production machine
-                    # but not here?
             else:
                 running_loss += loss_mel.item()
                 g_loss.backward()
@@ -607,7 +598,7 @@ def ml_main(config_path):
                     ref_lengths = input_lengths
                     ref_texts = texts
                     
-                slm_out = slmadv(i, 
+                slm_out = slmadv.run(i, 
                                 y_rec_gt, 
                                 y_rec_gt_pred, 
                                 waves, 
@@ -617,6 +608,13 @@ def ml_main(config_path):
 
                 if slm_out is not None:
                     d_loss_slm, loss_gen_lm, y_pred = slm_out
+
+                    # SLM generator loss
+                    optimizer.zero_grad()
+                    if distributed:
+                        accelerator.backward(loss_gen_lm)
+                    else:
+                        loss_gen_lm.backward()
                     
                     # compute the gradient norm
                     total_norm = {}
@@ -665,21 +663,26 @@ def ml_main(config_path):
                     optimizer.step('predictor')
                     optimizer.step('diffusion')
 
-                    # SLM discriminator loss
-                    if d_loss_slm != 0:
-                        optimizer.zero_grad()
-                        if distributed:
-                            accelerator.backward(d_loss_slm, retain_graph=True)
-                        else:
-                            d_loss_slm.backward(retain_graph=True)
-                        optimizer.step('wd')
+                    # Recalculated here to avoid backprop conflicts
+                    slm_out = slmadv.run(i, 
+                        y_rec_gt, 
+                        y_rec_gt_pred, 
+                        waves, 
+                        mel_input_length,
+                        ref_texts, 
+                        ref_lengths, use_ind, s_trg.detach(), ref if multispeaker else None)
 
-                    # SLM generator loss
-                    optimizer.zero_grad()
-                    if distributed:
-                        accelerator.backward(loss_gen_lm)
-                    else:
-                        loss_gen_lm.backward()
+                    if slm_out is not None:
+                        d_loss_slm, loss_gen_lm, y_pred = slm_out
+
+                        # SLM discriminator loss
+                        if d_loss_slm != 0:
+                            optimizer.zero_grad()
+                            if distributed:
+                                accelerator.backward(d_loss_slm)
+                            else:
+                                d_loss_slm.backward()
+                            optimizer.step('wd')
 
             iters = iters + 1
             

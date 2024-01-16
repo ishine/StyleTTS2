@@ -2,12 +2,13 @@ import torch
 import numpy as np
 import torch.nn.functional as F
 
-class SLMAdversarialLoss(torch.nn.Module):
-
+# This doesn't "own" any parameters so I really don't see why it needs to inherit
+# nn.Module.
+class SLMAdversarialLoss:
     def __init__(self, model, wl, sampler, min_len, max_len,
                  batch_percentage=0.5, skip_update=10, sig=1.5,
                  distributed=False):
-        super(SLMAdversarialLoss, self).__init__()
+        #super(SLMAdversarialLoss, self).__init__()
         self.model = model
         self.wl = wl
         self.sampler = sampler
@@ -20,7 +21,7 @@ class SLMAdversarialLoss(torch.nn.Module):
         self.skip_update = skip_update
         self.distributed = distributed
         
-    def forward(self, iters, y_rec_gt, y_rec_gt_pred, waves, mel_input_length,
+    def run(self, iters, y_rec_gt, y_rec_gt_pred, waves, mel_input_length,
                 ref_text, ref_lengths, use_ind, s_trg, ref_s=None):
         text_mask = length_to_mask(ref_lengths).to(ref_text.device)
         bert_dur = self.model.bert(ref_text, attention_mask=(~text_mask).int())
