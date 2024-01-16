@@ -618,14 +618,6 @@ def ml_main(config_path):
                 if slm_out is not None:
                     d_loss_slm, loss_gen_lm, y_pred = slm_out
                     
-                    # SLM generator loss
-                    optimizer.zero_grad()
-                    # retain_graph was never modified after #74 changed the calling order.
-                    if distributed:
-                        accelerator.backward(loss_gen_lm)
-                    else:
-                        loss_gen_lm.backward()
-
                     # compute the gradient norm
                     total_norm = {}
                     for key in model.keys():
@@ -681,7 +673,14 @@ def ml_main(config_path):
                         else:
                             d_loss_slm.backward(retain_graph=True)
                         optimizer.step('wd')
-                
+
+                    # SLM generator loss
+                    optimizer.zero_grad()
+                    if distributed:
+                        accelerator.backward(loss_gen_lm)
+                    else:
+                        loss_gen_lm.backward()
+
             iters = iters + 1
             
             if (i+1)%log_interval == 0 and accelerator.is_main_process:
