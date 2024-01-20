@@ -22,7 +22,7 @@ class EpubReader:
         print(f"done calculating style for {ref_audio_path}")
 
     def read_sentences(self, sentences,
-        alpha=0.1, beta=0.9, t=0.7, diffusion_steps=5):
+        alpha=0.1, beta=0.9, t=0.7, diffusion_steps=5, embedding_scale=1):
         s_prev = None
         wavs = []
 
@@ -31,7 +31,8 @@ class EpubReader:
             wav, s_prev = self.core.LFinference(
                 sentence, s_prev, self.style,
                 alpha=alpha, beta=beta,
-                t=t, diffusion_steps=diffusion_steps)
+                t=t, diffusion_steps=diffusion_steps,
+                embedding_scale=embedding_scale)
             wavs.append(wav)
         return np.concatenate(wavs)
 
@@ -43,14 +44,14 @@ class EpubReader:
         assert(os.path.exists(path))
         book = epub.read_epub(path)
         chapters = []
+        chapter_audios = []
 
         for i,chapter in enumerate(book.get_items_of_type(ebooklib.ITEM_DOCUMENT)):
             soup = BeautifulSoup(chapter.content, 'html.parser')
             text = soup.body.get_text(separator=' ').strip().replace('\n','.')
-            #if i <= 2:
-            #    continue
             if len(text) > 0:
-                return self.read_passage(text, **kwargs)
+                chapter_audios.append(self.read_passage(text, **kwargs))
+        return chapter_audios
         
 #er = EpubReader("Configs/config.yml", "Models/Omni1/checkpoint.pth", "ref_data/celestia.wav")
 #chapters = er.read_epub(r"C:\Users\vul\Downloads\days-of-wasp-and-spider.epub")
