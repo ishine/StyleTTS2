@@ -196,9 +196,8 @@ class ExampleApplicationsCore:
 
             x, _ = self.model.predictor.lstm(d)
             duration = self.model.predictor.duration_proj(x)
-
-            duration = torch.sigmoid(duration).sum(axis=-1)
             duration = duration_scale(text, duration, target_wpm)
+            duration = torch.sigmoid(duration).sum(axis=-1)
             pred_dur = torch.round(duration.squeeze()).clamp(min=1)
 
 
@@ -232,7 +231,8 @@ class ExampleApplicationsCore:
         return out.squeeze().cpu().numpy()[..., :-50]
 
 
-    def LFinference(self, text, s_prev, ref_s, alpha = 0.3, beta = 0.7, t = 0.7, diffusion_steps=5, embedding_scale=1):
+    def LFinference(self, text, s_prev, ref_s, alpha = 0.3, beta = 0.7, t = 0.7,
+        diffusion_steps=5, embedding_scale=1, target_wpm=150):
         text = text.strip()
         ps = conv_to_ipa(text)+'$'
         ps = ps.replace('``', '"')
@@ -273,7 +273,7 @@ class ExampleApplicationsCore:
 
             x, _ = self.model.predictor.lstm(d)
             duration = self.model.predictor.duration_proj(x)
-
+            duration = duration_scale(text, duration, target_wpm)
             duration = torch.sigmoid(duration).sum(axis=-1)
             pred_dur = torch.round(duration.squeeze()).clamp(min=1)
 
