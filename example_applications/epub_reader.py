@@ -22,17 +22,20 @@ class EpubReader:
         print(f"done calculating style for {ref_audio_path}")
 
     def read_sentences(self, sentences,
-        alpha=0.1, beta=0.9, t=0.7, diffusion_steps=5, embedding_scale=1):
+        alpha=0.1, beta=0.9, t=0.7, diffusion_steps=5, embedding_scale=1,
+        target_wpm=150):
         s_prev = None
         wavs = []
 
         for sentence in tqdm(sentences, desc="Inferring audio."):
             print(f"Inferring sentence {sentence}")
+            sentence = sentence.lower()
             wav, s_prev = self.core.LFinference(
                 sentence, s_prev, self.style,
                 alpha=alpha, beta=beta,
                 t=t, diffusion_steps=diffusion_steps,
-                embedding_scale=embedding_scale)
+                embedding_scale=embedding_scale,
+                target_wpm=target_wpm)
             wavs.append(wav)
         return np.concatenate(wavs)
 

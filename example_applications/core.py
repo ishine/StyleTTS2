@@ -46,6 +46,27 @@ def preprocess(wave):
 from Modules.diffusion.sampler import DiffusionSampler, ADPM2Sampler, KarrasSchedule
 from g2p_utils import conv_to_ipa
 
+from nltk import word_tokenize, sent_tokenize
+import string
+def duration_scale(text, duration,
+    target_wpm=170, sr=24000, dur_unit=590, 
+    short_sentence_adj = 0.3,
+    long_sentence_adj = 0.05):
+    tr = str.maketrans("", "", string.punctuation)
+    text = text.translate(tr)
+    n_words = len(word_tokenize(text))
+    est_cur_dur_sec = (duration.sum())*dur_unit/sr
+    est_wpm = n_words/(est_cur_dur_sec/60)
+    wpm_adj_factor = target_wpm/est_wpm
+    # Very short sentences should have lower wpm
+    if n_words < 5:
+        wpm_adj_factor *= (1 - short_sentence_adj)
+    # Longer sentences should have more pauses and should have lower wpm
+    wpm_adj_factor *= (1 - long_sentence_adj * n_words/target_wpm)
+    duration = duration / wpm_adj_factor
+    after_wpm = n_words/((duration.sum())*dur_unit/sr/60)
+    return duration
+
 class ExampleApplicationsCore:
     def __init__(self):
         self.model = None
@@ -138,7 +159,8 @@ class ExampleApplicationsCore:
         )
 
 
-    def inference(self, text, ref_s, alpha = 0.3, beta = 0.7, diffusion_steps=5, embedding_scale=1, ps_override=None):
+    def inference(self, text, ref_s, alpha = 0.3, beta = 0.7, diffusion_steps=5,
+        embedding_scale=1, ps_override=None, target_wpm=170):
         text = text.strip()
         if ps_override is not None:
             ps = ps_override
@@ -176,6 +198,7 @@ class ExampleApplicationsCore:
             duration = self.model.predictor.duration_proj(x)
 
             duration = torch.sigmoid(duration).sum(axis=-1)
+            duration = duration_scale(text, duration, target_wpm)
             pred_dur = torch.round(duration.squeeze()).clamp(min=1)
 
 
