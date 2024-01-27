@@ -55,6 +55,8 @@ def duration_scale(text, duration,
     tr = str.maketrans("", "", string.punctuation)
     text = text.translate(tr)
     n_words = len(word_tokenize(text))
+    if n_words == 0:
+        return duration
     est_cur_dur_sec = (duration.sum())*dur_unit/sr
     est_wpm = n_words/(est_cur_dur_sec/60)
     wpm_adj_factor = target_wpm/est_wpm
@@ -196,8 +198,8 @@ class ExampleApplicationsCore:
 
             x, _ = self.model.predictor.lstm(d)
             duration = self.model.predictor.duration_proj(x)
-            duration = duration_scale(text, duration, target_wpm)
             duration = torch.sigmoid(duration).sum(axis=-1)
+            duration = duration_scale(text, duration, target_wpm)
             pred_dur = torch.round(duration.squeeze()).clamp(min=1)
 
 
