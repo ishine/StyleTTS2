@@ -273,8 +273,8 @@ class ExampleApplicationsCore:
 
             x, _ = self.model.predictor.lstm(d)
             duration = self.model.predictor.duration_proj(x)
-            duration = duration_scale(text, duration, target_wpm)
             duration = torch.sigmoid(duration).sum(axis=-1)
+            duration = duration_scale(text, duration, target_wpm)
             pred_dur = torch.round(duration.squeeze()).clamp(min=1)
 
 
