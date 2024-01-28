@@ -7,6 +7,7 @@ import numpy as np
 import random
 import soundfile as sf
 import librosa
+from pathlib import Path
 
 import torch
 from torch import nn
@@ -272,6 +273,107 @@ class Collater(object):
         return waves, texts, input_lengths, ref_texts, ref_lengths, mels, output_lengths, ref_mels
 
 
+class CollaterWithRef48k(object):
+    """
+    Args:
+      adaptive_batch_size (bool): if true, decrease batch size when long data comes.
+    """
+
+    def __init__(self, dir_48ks, return_wave=False):
+        self.text_pad_index = 0
+        self.min_mel_length = 72
+        self.max_mel_length = 192
+        self.return_wave = return_wave
+        self.dir_48ks = dir_48ks
+        
+
+    def __call__(self, batch):
+        # batch[0] = wave, mel, text, f0, speakerid
+        batch_size = len(batch)
+
+        # sort by mel length
+        lengths = [b[1].shape[1] for b in batch]
+        batch_indexes = np.argsort(lengths)[::-1]
+        batch = [batch[bid] for bid in batch_indexes]
+
+        nmels = batch[0][1].size(0)
+        max_mel_length = max([b[1].shape[1] for b in batch])
+        max_text_length = max([b[2].shape[0] for b in batch])
+        max_rtext_length = max([b[3].shape[0] for b in batch])
+
+        labels = torch.zeros((batch_size)).long()
+        mels = torch.zeros((batch_size, nmels, max_mel_length)).float()
+        texts = torch.zeros((batch_size, max_text_length)).long()
+        ref_texts = torch.zeros((batch_size, max_rtext_length)).long()
+
+        input_lengths = torch.zeros(batch_size).long()
+        ref_lengths = torch.zeros(batch_size).long()
+        output_lengths = torch.zeros(batch_size).long()
+        ref_mels = torch.zeros((batch_size, nmels, self.max_mel_length)).float()
+        ref_labels = torch.zeros((batch_size)).long()
+        paths = ['' for _ in range(batch_size)]
+        waves = [None for _ in range(batch_size)]
+        
+        indices_to_remove = []
+        for bid, (label, mel, text, ref_text, ref_mel, ref_label, path, wave) in enumerate(batch):
+            mel_size = mel.size(1)
+            if mel_size < self.min_mel_length:
+                print(f"Ignoring | mel_size: {mel_size}, path: {path}")
+                indices_to_remove.append(bid)
+                continue
+            text_size = text.size(0)
+            if text_size <= 0:
+                print(f"Ignoring | text_size: {text_size}, path: {path}")
+                indices_to_remove.append(bid)
+                continue
+            rtext_size = ref_text.size(0)
+            labels[bid] = label
+            mels[bid, :, :mel_size] = mel
+            texts[bid, :text_size] = text
+            ref_texts[bid, :rtext_size] = ref_text
+            input_lengths[bid] = text_size
+            ref_lengths[bid] = rtext_size
+            output_lengths[bid] = mel_size
+            paths[bid] = path
+            ref_mel_size = ref_mel.size(1)
+            ref_mels[bid, :, :ref_mel_size] = ref_mel
+            
+            ref_labels[bid] = ref_label
+            waves[bid] = wave
+
+        # For removing incompatible items from tensor
+        def mult_delete(
+            arr: torch.Tensor, skip_ind: list, dim: int) -> torch.Tensor:
+            #print(f"prior: {arr.shape}")
+            mask = torch.ones(batch_size, dtype=torch.bool)
+            mask[skip_ind] = False
+            return arr[mask]
+
+        for bid in sorted(indices_to_remove, reverse=True):
+            del(waves[bid])
+            del(paths[bid])
+        texts = mult_delete(texts, indices_to_remove, 0)
+        input_lengths = mult_delete(input_lengths, indices_to_remove, 0)
+        ref_texts = mult_delete(ref_texts, indices_to_remove, 0)
+        ref_lengths = mult_delete(ref_lengths, indices_to_remove, 0)
+        mels = mult_delete(mels, indices_to_remove, 0)
+        output_lengths = mult_delete(output_lengths, indices_to_remove, 0)
+        ref_mels = mult_delete(ref_mels, indices_to_remove, 0)
+
+        waves_48k = []
+        for p in paths:
+            file_name = Path(p).name
+            # Look for the file with the same name in dir_48ks
+            file_48k_path = os.path.join(self.dir_48ks, file_name)
+            wave, sr = sf.read(file_48k_path)
+            assert(sr == 48000)
+            # A 5000 sample pre and post silence is used for the 24k version
+            # Thus for 48k, 2x the samples for the pre and post sample delay
+            wave = np.concatenate([np.zeros([10000]), wave, np.zeros([10000])], axis=0)
+            waves_48k.append(wave)
+
+        #print(f"from collater: {input_lengths}")
+        return waves, texts, input_lengths, ref_texts, ref_lengths, mels, output_lengths, ref_mels, waves_48k
 
 def build_dataloader(path_list,
                      root_path,
@@ -286,6 +388,30 @@ def build_dataloader(path_list,
     
     dataset = FilePathDataset(path_list, root_path, OOD_data=OOD_data, min_length=min_length, validation=validation, **dataset_config)
     collate_fn = Collater(**collate_config)
+    data_loader = DataLoader(dataset,
+                             batch_size=batch_size,
+                             shuffle=(not validation),
+                             num_workers=num_workers,
+                             drop_last=(not validation),
+                             collate_fn=collate_fn,
+                             pin_memory=(device != 'cpu'))
+
+    return data_loader
+
+def build_dataloader_with_ref_48k(path_list,
+                     root_path,
+                     dir_48ks,
+                     validation=False,
+                     OOD_data="Data/OOD_texts.txt",
+                     min_length=50,
+                     batch_size=4,
+                     num_workers=1,
+                     device='cpu',
+                     collate_config={},
+                     dataset_config={}):
+    
+    dataset = FilePathDataset(path_list, root_path, OOD_data=OOD_data, min_length=min_length, validation=validation, **dataset_config)
+    collate_fn = CollaterWithRef48k(dir_48ks, **collate_config)
     data_loader = DataLoader(dataset,
                              batch_size=batch_size,
                              shuffle=(not validation),
