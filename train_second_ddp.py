@@ -132,7 +132,7 @@ def ml_main(config_path):
     # build model
     model_params = recursive_munch(config['model_params'])
     multispeaker = model_params.multispeaker
-    model = build_model(model_params, text_aligner, pitch_extractor, plbert)
+    model = build_model(model_params, text_aligner, pitch_extractor, plbert, sr=sr)
     _ = [model[key].to(device) for key in model]
     
     # DDP/DP
@@ -151,7 +151,8 @@ def ml_main(config_path):
                                         batch_size=batch_size,
                                         num_workers=2,
                                         dataset_config={},
-                                        device=device)
+                                        device=device,
+                                        sr=sr)
 
     val_dataloader = build_dataloader(val_list,
                                       root_path,
@@ -161,7 +162,8 @@ def ml_main(config_path):
                                       validation=True,
                                       num_workers=0,
                                       device=device,
-                                      dataset_config={})
+                                      dataset_config={},
+                                      sr=sr)
     
 
     if distributed:

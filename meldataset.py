@@ -103,8 +103,6 @@ class FilePathDataset(torch.utils.data.Dataset):
         
         self.root_path = root_path
 
-        # the largest your dataset could be is ~20GB... should fit in RAM
-        # yeah but this is bigger
         self.sf_cache = {} 
         self.use_cache = False
         if self.use_cache:
@@ -157,8 +155,8 @@ class FilePathDataset(torch.utils.data.Dataset):
             wave, sr = sf.read(osp.join(self.root_path, wave_path))
         if wave.shape[-1] == 2:
             wave = wave[:, 0].squeeze()
-        if sr != 24000:
-            wave = librosa.resample(wave, orig_sr=sr, target_sr=24000)
+        if sr != self.sr:
+            wave = librosa.resample(wave, orig_sr=sr, target_sr=self.sr)
             print(wave_path, sr)
             
         wave = np.concatenate([np.zeros([5000]), wave, np.zeros([5000])], axis=0)
@@ -384,9 +382,11 @@ def build_dataloader(path_list,
                      num_workers=1,
                      device='cpu',
                      collate_config={},
-                     dataset_config={}):
+                     dataset_config={},
+                     sr=24000):
     
-    dataset = FilePathDataset(path_list, root_path, OOD_data=OOD_data, min_length=min_length, validation=validation, **dataset_config)
+    dataset = FilePathDataset(
+        path_list, root_path, OOD_data=OOD_data, min_length=min_length, validation=validation, sr=sr, **dataset_config)
     collate_fn = Collater(**collate_config)
     data_loader = DataLoader(dataset,
                              batch_size=batch_size,

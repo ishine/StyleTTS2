@@ -98,7 +98,8 @@ def ml_main(config_path):
                                         batch_size=batch_size,
                                         num_workers=2,
                                         dataset_config={},
-                                        device=device)
+                                        device=device,
+                                        sr=sr)
 
     val_dataloader = build_dataloader(val_list,
                                       root_path,
@@ -108,7 +109,8 @@ def ml_main(config_path):
                                       validation=True,
                                       num_workers=0,
                                       device=device,
-                                      dataset_config={})
+                                      dataset_config={},
+                                      sr=sr)
     
     with accelerator.main_process_first():
         # load pretrained ASR model
@@ -138,7 +140,7 @@ def ml_main(config_path):
         logging.info('Training multispeaker model')
     else:
         logging.info('Training single speaker model')
-    model = build_model(model_params, text_aligner, pitch_extractor, plbert)
+    model = build_model(model_params, text_aligner, pitch_extractor, plbert, sr=sr)
 
     best_loss = float('inf')  # best test loss
     loss_train_record = list([])
