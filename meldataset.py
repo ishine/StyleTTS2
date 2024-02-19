@@ -56,17 +56,14 @@ SPECT_PARAMS = {
 }
 MEL_PARAMS = {
     "n_mels": 80,
+    "n_fft": 2048,
+    "win_length": 1200,
+    "hop_length": 300
 }
 
 to_mel = torchaudio.transforms.MelSpectrogram(
     n_mels=80, n_fft=2048, win_length=1200, hop_length=300)
 mean, std = -4, 4
-
-def preprocess(wave):
-    wave_tensor = torch.from_numpy(wave).float()
-    mel_tensor = to_mel(wave_tensor)
-    mel_tensor = (torch.log(1e-5 + mel_tensor.unsqueeze(0)) - mean) / std
-    return mel_tensor
 
 class FilePathDataset(torch.utils.data.Dataset):
     def __init__(self,
@@ -89,11 +86,12 @@ class FilePathDataset(torch.utils.data.Dataset):
 
         self.df = pd.DataFrame(self.data_list)
 
-        self.to_melspec = torchaudio.transforms.MelSpectrogram(**MEL_PARAMS)
+        self.to_melspec = torchaudio.transforms.MelSpectrogram(
+            sample_rate=sr,**MEL_PARAMS)
 
         self.mean, self.std = -4, 4
         self.data_augmentation = data_augmentation and (not validation)
-        self.max_mel_length = 192
+        self.max_mel_length = 256
         
         self.min_length = min_length
         with open(OOD_data, 'r', encoding='utf-8') as f:
@@ -114,13 +112,19 @@ class FilePathDataset(torch.utils.data.Dataset):
     def __len__(self):
         return len(self.data_list)
 
+    def preprocess(self, wave):
+        wave_tensor = torch.from_numpy(wave).float()
+        mel_tensor = self.to_melspec(wave_tensor)
+        mel_tensor = (torch.log(1e-5 + mel_tensor.unsqueeze(0)) - self.mean) / self.std
+        return mel_tensor
+
     def __getitem__(self, idx):        
         data = self.data_list[idx]
         path = data[0]
         
         wave, text_tensor, speaker_id = self._load_tensor(data)
         
-        mel_tensor = preprocess(wave).squeeze(0)
+        mel_tensor = self.preprocess(wave).squeeze(0)
         
         acoustic_feature = mel_tensor.squeeze()
         length_feature = acoustic_feature.size(1)
