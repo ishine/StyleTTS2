@@ -310,7 +310,7 @@ def ml_main(config_path):
     criterion = nn.L1Loss() # F0 loss (regression)
     torch.cuda.empty_cache()
     
-    stft_loss = MultiResolutionSTFTLoss().to(device)
+    stft_loss = MultiResolutionSTFTLoss(sr=sr).to(device)
     stft_loss = accelerator.prepare(stft_loss)
     
     print('BERT', optimizer.optimizers['bert'])

@@ -212,7 +212,7 @@ def ml_main(config_path):
         n_down = model.text_aligner.n_down
     
     # wrapped losses for compatibility with mixed precision
-    stft_loss = MultiResolutionSTFTLoss().to(device)
+    stft_loss = MultiResolutionSTFTLoss(sr=sr).to(device)
     gl = GeneratorLoss(model.mpd, model.msd).to(device)
     dl = DiscriminatorLoss(model.mpd, model.msd).to(device)
     wl = WavLMLoss(model_params.slm.model, 
