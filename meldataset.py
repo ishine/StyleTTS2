@@ -195,7 +195,7 @@ class Collater(object):
     def __init__(self, return_wave=False):
         self.text_pad_index = 0
         self.min_mel_length = 72
-        self.max_mel_length = 192
+        self.max_mel_length = 256
         self.return_wave = return_wave
         
 
