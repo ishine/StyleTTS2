@@ -182,20 +182,22 @@ def ml_main(config_path):
                     model,  optimizer, resume_model,
                     load_only_params=False) # by definition of resuming
         elif pretrained_model != '':
-            logging.info(f'Loading from pretrained model ({pretrained_model})')
+            logging.info(f'Warm from pretrained model ({pretrained_model})')
             if not os.path.exists(pretrained_model):
                 pretrained_model = os.path.join(log_dir, pretrained_model)
             assert (Path(pretrained_model).stem.startswith('epoch_1st_'))
-            (model, optimizer, start_epoch, iters,
+            (model, optimizer, _, _,
                 _, _) = load_checkpoint2(
                 model,  optimizer, pretrained_model,
                 load_only_params=config.get('load_only_params', True))
+            start_epoch = 0
+            iters = 0
         else:
             logging.info('Starting fresh run')
             start_epoch = 0
             iters = 0
 
-    if ckpt_batch_size is not None:
+    if ckpt_batch_size is not None and iters != 0:
         if ckpt_batch_size != batch_size:
             ckpt_batch_idx = (ckpt_batch_idx * ckpt_batch_size) // batch_size
             logging.info(
