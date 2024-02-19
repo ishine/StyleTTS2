@@ -176,7 +176,7 @@ class FilePathDataset(torch.utils.data.Dataset):
 
     def _load_data(self, data):
         wave, text_tensor, speaker_id = self._load_tensor(data)
-        mel_tensor = preprocess(wave).squeeze()
+        mel_tensor = self.preprocess(wave).squeeze()
 
         mel_length = mel_tensor.size(1)
         if mel_length > self.max_mel_length:
