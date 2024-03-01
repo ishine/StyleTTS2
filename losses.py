@@ -204,7 +204,7 @@ class WavLMLoss(torch.nn.Module):
             wav_16 = self.resample(wav)
             wav_embeddings = self.wavlm(input_values=wav_16, output_hidden_states=True).hidden_states
         y_rec_16 = self.resample(y_rec)
-        print("207",y_rec_16.shape)
+        #print("207",y_rec_16.shape)
         # No squeeze needed here
         y_rec_embeddings = self.wavlm(input_values=y_rec_16, output_hidden_states=True).hidden_states
 
