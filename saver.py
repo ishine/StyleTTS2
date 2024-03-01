@@ -16,7 +16,7 @@ class Saver:
         self.optimizer = optimizer
         self.config = config
         self.log_dir = config['log_dir']
-        self.save_freq = config.get('saver_freq_steps', 500)
+        self.save_freq = config.get('saver_freq_steps', 300)
         self.save_epoch = config.get('save_freq', 2)
         self.stats_list_name = config.get('saver_stats_list_name',
             'ckpt_stats_list.json')

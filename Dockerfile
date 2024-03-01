@@ -15,7 +15,7 @@ RUN pip install -r requirements.txt gdown tqdm pyyaml requests ffmpeg-python
 COPY styletts2_train_remote.ipynb /root/StyleTTS2/
 COPY *.py /root/StyleTTS2/
 COPY *.sh /root/StyleTTS2/
-Copy Configs /root/StyleTTS2/
-Copy Data /root/StyleTTS2/
-Copy Modules /root/StyleTTS2/
-Copy Utils /root/StyleTTS2/
+Copy Configs /root/StyleTTS2/Configs
+Copy Data /root/StyleTTS2/Data
+Copy Modules /root/StyleTTS2/Modules
+Copy Utils /root/StyleTTS2/Utils
