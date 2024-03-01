@@ -130,6 +130,7 @@ class FilePathDataset(torch.utils.data.Dataset):
         
         mel_tensor = self.preprocess(wave).squeeze(0)
         
+        #print("133",mel_tensor.shape)
         acoustic_feature = mel_tensor.squeeze()
         length_feature = acoustic_feature.size(1)
         acoustic_feature = acoustic_feature[:, :(length_feature - length_feature % 2)]
@@ -168,6 +169,7 @@ class FilePathDataset(torch.utils.data.Dataset):
                     osp.exists(osp.join(self.root_path, wave_path)),
                     e)
         if wave.shape[-1] == 2:
+            #print("172",wave.shape)
             wave = wave[:, 0].squeeze()
         if sr != self.sr:
             wave = librosa.resample(wave, orig_sr=sr, target_sr=self.sr)
@@ -186,7 +188,8 @@ class FilePathDataset(torch.utils.data.Dataset):
 
     def _load_data(self, data):
         wave, text_tensor, speaker_id = self._load_tensor(data)
-        mel_tensor = self.preprocess(wave).squeeze()
+        #print("191",self.preprocess(wave).shape)
+        mel_tensor = self.preprocess(wave).squeeze(0)
 
         mel_length = mel_tensor.size(1)
         if mel_length > self.max_mel_length:
