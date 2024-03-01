@@ -109,6 +109,8 @@ class FilePathDataset(torch.utils.data.Dataset):
                 sound_path = osp.join(self.root_path, wave_path)
                 self.sf_cache[sound_path] = sf.read(sound_path)
 
+        self.noop_state = False
+
     def __len__(self):
         return len(self.data_list)
 
@@ -119,6 +121,8 @@ class FilePathDataset(torch.utils.data.Dataset):
         return mel_tensor
 
     def __getitem__(self, idx):        
+        if self.noop_state:
+            return None
         data = self.data_list[idx]
         path = data[0]
         
@@ -153,10 +157,16 @@ class FilePathDataset(torch.utils.data.Dataset):
     def _load_tensor(self, data):
         wave_path, text, speaker_id = data
         speaker_id = int(speaker_id)
+        #print(osp.join(self.root_path,wave_path))
         if self.use_cache:
             wave, sr = self.sf_cache[osp.join(self.root_path, wave_path)]
         else:
-            wave, sr = sf.read(osp.join(self.root_path, wave_path))
+            try:
+                wave, sr = sf.read(osp.join(self.root_path, wave_path))
+            except sf.LibsndfileError as e:
+                print(osp.join(self.root_path, wave_path), 
+                    osp.exists(osp.join(self.root_path, wave_path)),
+                    e)
         if wave.shape[-1] == 2:
             wave = wave[:, 0].squeeze()
         if sr != self.sr:
@@ -200,6 +210,8 @@ class Collater(object):
         
 
     def __call__(self, batch):
+        if batch[0] is None:
+            return None
         # batch[0] = wave, mel, text, f0, speakerid
         batch_size = len(batch)
 
@@ -425,3 +437,28 @@ def build_dataloader_with_ref_48k(path_list,
                              pin_memory=(device != 'cpu'))
 
     return data_loader
+
+def build_dataloader2(path_list,
+                     root_path,
+                     validation=False,
+                     OOD_data="Data/OOD_texts.txt",
+                     min_length=50,
+                     batch_size=4,
+                     num_workers=1,
+                     device='cpu',
+                     collate_config={},
+                     dataset_config={},
+                     sr=24000):
+    
+    dataset = FilePathDataset(
+        path_list, root_path, OOD_data=OOD_data, min_length=min_length, validation=validation, sr=sr, **dataset_config)
+    collate_fn = Collater(**collate_config)
+    data_loader = DataLoader(dataset,
+                             batch_size=batch_size,
+                             shuffle=(not validation),
+                             num_workers=num_workers,
+                             drop_last=(not validation),
+                             collate_fn=collate_fn,
+                             pin_memory=(device != 'cpu'))
+
+    return data_loader, dataset

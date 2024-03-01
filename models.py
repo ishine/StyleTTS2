@@ -703,34 +703,46 @@ def load_checkpoint(model, optimizer, path, load_only_params=True, ignore_module
     state = torch.load(path, map_location='cpu')
     params = state['net']
 
-    if not use_moduleprefix:
+    from collections import OrderedDict
+    if use_moduleprefix:
         for key in model:
-            from collections import OrderedDict
             new_state_dict = OrderedDict()
-            for k,v in params[key].items(): # Fix for non-distributed training
-                if not k.startswith("module"):
-                    #print(f"load_checkpoint: {k}")
-                    name = 'module.' + k
-                else:
-                    name = k
-                new_state_dict[name] = v
-
-            if key in ['mpd', 'msd', 'wd']:
-                new_state_dict = params[key]
-
             if key in params and key not in ignore_modules:
+                if key in ['mpd', 'msd', 'wd']:
+                    print(key)
+                    for k,v in params[key].items(): 
+                        if k.startswith("module"):
+                            #print(f"load_checkpoint: {k}")
+                            name = k.removeprefix('module.')
+                        else:
+                            name = k
+                        new_state_dict[name] = v
+                else:
+                    print(key)
+                    for k,v in params[key].items(): 
+                        if not k.startswith("module"):
+                            #print(f"load_checkpoint: {k}")
+                            name = 'module.' + k
+                        else:
+                            name = k
+                        new_state_dict[name] = v
                 print('%s loaded' % key)
                 model[key].load_state_dict(new_state_dict)
                 #model[key].load_state_dict(params[key], strict=False)
     else:
         for key in model:
+            new_state_dict = OrderedDict()
+            for k,v in params[key].items(): # Fix for non-distributed training
+                if k.startswith("module"):
+                    #print(f"load_checkpoint: {k}")
+                    name = k.removeprefix('module.')
+                else:
+                    name = k
+                new_state_dict[name] = v
+
             if key in params and key not in ignore_modules:
                 print('%s loaded' % key)
-                #try: 
-                #    model[key].load_state_dict(params[key], strict=True)
-                #except RuntimeError as e:
-                #    print(e)
-                model[key].load_state_dict(params[key], strict=False)
+                model[key].load_state_dict(new_state_dict, strict=False)
 
     _ = [model[key].eval() for key in model]
     
@@ -749,28 +761,42 @@ def load_checkpoint2(model, optimizer, path, load_only_params=True, ignore_modul
     state = torch.load(path, map_location='cpu')
     params = state['net']
 
-    if not use_moduleprefix:
+    from collections import OrderedDict
+    if use_moduleprefix:
         for key in model:
-            from collections import OrderedDict
+            new_state_dict = OrderedDict()
+            if key in params and key not in ignore_modules:
+                if key in ['mpd', 'msd', 'wd']:
+                    print(key)
+                    for k,v in params[key].items(): 
+                        if k.startswith("module"):
+                            #print(f"load_checkpoint: {k}")
+                            name = k.removeprefix('module.')
+                        else:
+                            name = k
+                        new_state_dict[name] = v
+                else:
+                    print(key)
+                    for k,v in params[key].items(): 
+                        if not k.startswith("module"):
+                            #print(f"load_checkpoint: {k}")
+                            name = 'module.' + k
+                        else:
+                            name = k
+                        new_state_dict[name] = v
+                print('%s loaded' % key)
+                model[key].load_state_dict(new_state_dict)
+                #model[key].load_state_dict(params[key], strict=False)
+    else:
+        for key in model:
             new_state_dict = OrderedDict()
             for k,v in params[key].items(): # Fix for non-distributed training
-                if not k.startswith("module"):
-                    name = 'module.' + k
+                if k.startswith("module"):
+                    #print(f"load_checkpoint: {k}")
+                    name = k.removeprefix('module.')
                 else:
                     name = k
                 new_state_dict[name] = v
-
-            if key in ['mpd', 'msd', 'wd']:
-                new_state_dict = params[key]
-
-            if key in params and key not in ignore_modules:
-                print('%s loaded' % key)
-                model[key].load_state_dict(new_state_dict)
-    else:
-        for key in model:
-            if key in params and key not in ignore_modules:
-                print('%s loaded' % key)
-                model[key].load_state_dict(params[key], strict=False)
 
     _ = [model[key].eval() for key in model]
     
