@@ -7,9 +7,6 @@ pretrained_model: ""
 train_data: "ASRDataset/train_list.txt"
 val_data: "ASRDataset/val_list.txt"
 
-dataset_params:
-  data_augmentation: false
-
 preprocess_parasm:
   sr: 24000
   spect_params:
@@ -27,3 +24,6 @@ model_params:
 
 optimizer_params:
   lr: 0.0005
+
+dataset_params:
+  data_augmentation: false
