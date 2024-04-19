@@ -13,8 +13,9 @@ for i in range(len((symbols))):
     dicts[symbols[i]] = i
 
 class TextCleaner:
-    def __init__(self, dummy=None):
+    def __init__(self, dummy=None, print_keyerrors=False):
         self.word_index_dictionary = dicts
+        self.print_keyerrors = print_keyerrors
         print(len(dicts))
     def __call__(self, text):
         indexes = []
@@ -22,5 +23,6 @@ class TextCleaner:
             try:
                 indexes.append(self.word_index_dictionary[char])
             except KeyError:
-                print(text)
+                if self.print_keyerrors:
+                    print(text)
         return indexes

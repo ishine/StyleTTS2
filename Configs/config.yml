@@ -1,17 +1,19 @@
-log_dir: "Models/LJSpeech"
-first_stage_path: "first_stage.pth"
-save_freq: 2
+log_dir: "Models/Twilight_dummy"
+save_freq: 1
 log_interval: 10
 device: "cuda"
 epochs_1st: 200 # number of epochs for first stage training (pre-training)
-epochs_2nd: 100 # number of peochs for second stage training (joint training)
+epochs_2nd: 160 # number of peochs for second stage training (joint training)
 batch_size: 16
-max_len: 400 # maximum number of frames
+max_len: 800 # maximum number of frames
 pretrained_model: ""
-second_stage_load_pretrained: true # set to true if the pre-trained model is for 2nd stage
-load_only_params: false # set to true if do not want to load epoch numbers and optimizer parameters
+resume: true
 
-F0_path: "Utils/JDC/bst.t7"
+saver_freq_steps: 3 # saves every these steps in addition to epochs -- useful for interruptible GPU instances
+saver_max_ckpts: 5 # maximum ckpts to save in logging directory
+saver_mode: 'ITER' # decide which ckpts to save based on validation loss (vs. 'ITER' based on total steps)
+
+F0_path: "Utils/JDC/bst_rmvpe.t7"
 ASR_config: "Utils/ASR/config.yml"
 ASR_path: "Utils/ASR/epoch_00080.pth"
 PLBERT_dir: 'Utils/PLBERT/'
@@ -19,12 +21,12 @@ PLBERT_dir: 'Utils/PLBERT/'
 data_params:
   train_data: "Data/train_list.txt"
   val_data: "Data/val_list.txt"
-  root_path: "/local/LJSpeech-1.1/wavs"
+  root_path: "Twilight_data"
   OOD_data: "Data/OOD_texts.txt"
   min_length: 50 # sample until texts with this size are obtained for OOD texts
 
 preprocess_params:
-  sr: 24000
+  sr: 48000
   spect_params:
     n_fft: 2048
     win_length: 1200
@@ -97,7 +99,7 @@ loss_params:
     lambda_sty: 1. # style reconstruction loss (2nd stage)
     lambda_diff: 1. # score matching loss (2nd stage)
     
-    diff_epoch: 20 # style diffusion starting epoch (2nd stage)
+    diff_epoch: 40 # style diffusion starting epoch (2nd stage)
     joint_epoch: 50 # joint training starting epoch (2nd stage)
 
 optimizer_params:
@@ -113,4 +115,3 @@ slmadv_params:
   thresh: 5 # gradient norm above which the gradient is scaled
   scale: 0.01 # gradient scaling factor for predictors from SLM discriminators
   sig: 1.5 # sigma for differentiable duration modeling
-  

@@ -300,7 +300,7 @@ def padDiff(x):
 
     
 class Generator(torch.nn.Module):
-    def __init__(self, style_dim, resblock_kernel_sizes, upsample_rates, upsample_initial_channel, resblock_dilation_sizes, upsample_kernel_sizes, gen_istft_n_fft, gen_istft_hop_size):
+    def __init__(self, style_dim, resblock_kernel_sizes, upsample_rates, upsample_initial_channel, resblock_dilation_sizes, upsample_kernel_sizes, gen_istft_n_fft, gen_istft_hop_size, sr=24000):
         super(Generator, self).__init__()
 
         self.num_kernels = len(resblock_kernel_sizes)
@@ -308,7 +308,7 @@ class Generator(torch.nn.Module):
         resblock = AdaINResBlock1
 
         self.m_source = SourceModuleHnNSF(
-                    sampling_rate=24000,
+                    sampling_rate=sr,
                     upsample_scale=np.prod(upsample_rates) * gen_istft_hop_size,
                     harmonic_num=8, voiced_threshod=10)
         self.f0_upsamp = torch.nn.Upsample(scale_factor=np.prod(upsample_rates) * gen_istft_hop_size)
@@ -471,7 +471,7 @@ class Decoder(nn.Module):
                 upsample_initial_channel=512,
                 resblock_dilation_sizes=[[1,3,5], [1,3,5], [1,3,5]],
                 upsample_kernel_sizes=[20, 12], 
-                gen_istft_n_fft=20, gen_istft_hop_size=5):
+                gen_istft_n_fft=20, gen_istft_hop_size=5, sr=24000):
         super().__init__()
         
         self.decode = nn.ModuleList()
@@ -494,7 +494,7 @@ class Decoder(nn.Module):
         
         self.generator = Generator(style_dim, resblock_kernel_sizes, upsample_rates, 
                                    upsample_initial_channel, resblock_dilation_sizes, 
-                                   upsample_kernel_sizes, gen_istft_n_fft, gen_istft_hop_size)
+                                   upsample_kernel_sizes, gen_istft_n_fft, gen_istft_hop_size, sr)
         
     def forward(self, asr, F0_curve, N, s):
         if self.training:
@@ -507,7 +507,6 @@ class Decoder(nn.Module):
             if N_down:
                 N = nn.functional.conv1d(N.unsqueeze(1), torch.ones(1, 1, N_down).to('cuda'), padding=N_down//2).squeeze(1)  / N_down
 
-        
         F0 = self.F0_conv(F0_curve.unsqueeze(1))
         N = self.N_conv(N.unsqueeze(1))
         

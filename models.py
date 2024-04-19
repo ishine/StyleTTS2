@@ -157,6 +157,7 @@ class StyleEncoder(nn.Module):
         self.unshared = nn.Linear(dim_out, style_dim)
 
     def forward(self, x):
+        #print(x.shape)
         h = self.shared(x)
         h = h.view(h.size(0), -1)
         s = self.unshared(h)
@@ -428,6 +429,7 @@ class AdaLayerNorm(nn.Module):
         x = x.transpose(1, -1)
                 
         h = self.fc(s)
+        # Problem is here
         h = h.view(h.size(0), h.size(1), 1)
         gamma, beta = torch.chunk(h, chunks=2, dim=1)
         gamma, beta = gamma.transpose(1, -1), beta.transpose(1, -1)
@@ -466,6 +468,7 @@ class ProsodyPredictor(nn.Module):
 
 
     def forward(self, texts, style, text_lengths, alignment, m):
+        # Problem is here
         d = self.text_encoder(texts, style, text_lengths, m)
         
         batch_size = d.shape[0]
@@ -547,6 +550,7 @@ class DurationEncoder(nn.Module):
         
         for block in self.lstms:
             if isinstance(block, AdaLayerNorm):
+                # Problem is here
                 x = block(x.transpose(-1, -2), style).transpose(-1, -2)
                 x = torch.cat([x, s.permute(1, -1, 0)], axis=1)
                 x.masked_fill_(masks.unsqueeze(-1).transpose(-1, -2), 0.0)
@@ -611,7 +615,7 @@ def load_ASR_models(ASR_MODEL_PATH, ASR_MODEL_CONFIG):
 
     return asr_model
 
-def build_model(args, text_aligner, pitch_extractor, bert):
+def build_model(args, text_aligner, pitch_extractor, bert, sr):
     assert args.decoder.type in ['istftnet', 'hifigan'], 'Decoder type unknown'
     
     if args.decoder.type == "istftnet":
@@ -622,7 +626,8 @@ def build_model(args, text_aligner, pitch_extractor, bert):
                 upsample_initial_channel=args.decoder.upsample_initial_channel,
                 resblock_dilation_sizes=args.decoder.resblock_dilation_sizes,
                 upsample_kernel_sizes=args.decoder.upsample_kernel_sizes, 
-                gen_istft_n_fft=args.decoder.gen_istft_n_fft, gen_istft_hop_size=args.decoder.gen_istft_hop_size) 
+                gen_istft_n_fft=args.decoder.gen_istft_n_fft, gen_istft_hop_size=args.decoder.gen_istft_hop_size,
+                sr=sr) 
     else:
         from Modules.hifigan import Decoder
         decoder = Decoder(dim_in=args.hidden_dim, style_dim=args.style_dim, dim_out=args.n_mels,
@@ -693,13 +698,52 @@ def build_model(args, text_aligner, pitch_extractor, bert):
     
     return nets
 
-def load_checkpoint(model, optimizer, path, load_only_params=True, ignore_modules=[]):
+def load_checkpoint(model, optimizer, path, load_only_params=True, ignore_modules=[],
+    use_moduleprefix=True):
     state = torch.load(path, map_location='cpu')
     params = state['net']
-    for key in model:
-        if key in params and key not in ignore_modules:
-            print('%s loaded' % key)
-            model[key].load_state_dict(params[key], strict=False)
+
+    from collections import OrderedDict
+    if use_moduleprefix:
+        for key in model:
+            new_state_dict = OrderedDict()
+            if key in params and key not in ignore_modules:
+                if key in ['mpd', 'msd', 'wd']:
+                    print(key)
+                    for k,v in params[key].items(): 
+                        if k.startswith("module"):
+                            #print(f"load_checkpoint: {k}")
+                            name = k.removeprefix('module.')
+                        else:
+                            name = k
+                        new_state_dict[name] = v
+                else:
+                    print(key)
+                    for k,v in params[key].items(): 
+                        if not k.startswith("module"):
+                            #print(f"load_checkpoint: {k}")
+                            name = 'module.' + k
+                        else:
+                            name = k
+                        new_state_dict[name] = v
+                print('%s loaded' % key)
+                model[key].load_state_dict(new_state_dict)
+                #model[key].load_state_dict(params[key], strict=False)
+    else:
+        for key in model:
+            new_state_dict = OrderedDict()
+            for k,v in params[key].items(): # Fix for non-distributed training
+                if k.startswith("module"):
+                    #print(f"load_checkpoint: {k}")
+                    name = k.removeprefix('module.')
+                else:
+                    name = k
+                new_state_dict[name] = v
+
+            if key in params and key not in ignore_modules:
+                print('%s loaded' % key)
+                model[key].load_state_dict(new_state_dict, strict=False)
+
     _ = [model[key].eval() for key in model]
     
     if not load_only_params:
@@ -711,3 +755,61 @@ def load_checkpoint(model, optimizer, path, load_only_params=True, ignore_module
         iters = 0
         
     return model, optimizer, epoch, iters
+
+def load_checkpoint2(model, optimizer, path, load_only_params=True, ignore_modules=[],
+    use_moduleprefix=True):
+    state = torch.load(path, map_location='cpu')
+    params = state['net']
+
+    from collections import OrderedDict
+    if use_moduleprefix:
+        for key in model:
+            new_state_dict = OrderedDict()
+            if key in params and key not in ignore_modules:
+                if key in ['mpd', 'msd', 'wd']:
+                    print(key)
+                    for k,v in params[key].items(): 
+                        if k.startswith("module"):
+                            #print(f"load_checkpoint: {k}")
+                            name = k.removeprefix('module.')
+                        else:
+                            name = k
+                        new_state_dict[name] = v
+                else:
+                    print(key)
+                    for k,v in params[key].items(): 
+                        if not k.startswith("module"):
+                            #print(f"load_checkpoint: {k}")
+                            name = 'module.' + k
+                        else:
+                            name = k
+                        new_state_dict[name] = v
+                print('%s loaded' % key)
+                model[key].load_state_dict(new_state_dict)
+                #model[key].load_state_dict(params[key], strict=False)
+    else:
+        for key in model:
+            new_state_dict = OrderedDict()
+            for k,v in params[key].items(): # Fix for non-distributed training
+                if k.startswith("module"):
+                    #print(f"load_checkpoint: {k}")
+                    name = k.removeprefix('module.')
+                else:
+                    name = k
+                new_state_dict[name] = v
+
+    _ = [model[key].eval() for key in model]
+    
+    if not load_only_params:
+        epoch = state["epoch"]
+        iters = state["iters"]
+        batch_idx = state.get("batch_idx", 0)
+        batch_size = state.get("batch_size", None)
+        optimizer.load_state_dict(state["optimizer"])
+    else:
+        epoch = 0
+        iters = 0
+        batch_idx = 0
+        batch_size = None
+        
+    return model, optimizer, epoch, iters, batch_idx, batch_size

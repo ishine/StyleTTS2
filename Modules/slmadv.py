@@ -1,11 +1,15 @@
 import torch
 import numpy as np
 import torch.nn.functional as F
+import logging
 
-class SLMAdversarialLoss(torch.nn.Module):
-
-    def __init__(self, model, wl, sampler, min_len, max_len, batch_percentage=0.5, skip_update=10, sig=1.5):
-        super(SLMAdversarialLoss, self).__init__()
+# This doesn't "own" any parameters so I really don't see why it needs to inherit
+# nn.Module.
+class SLMAdversarialLoss:
+    def __init__(self, model, wl, sampler, min_len, max_len,
+                 batch_percentage=0.5, skip_update=10, sig=1.5,
+                 distributed=False):
+        #super(SLMAdversarialLoss, self).__init__()
         self.model = model
         self.wl = wl
         self.sampler = sampler
@@ -16,8 +20,10 @@ class SLMAdversarialLoss(torch.nn.Module):
         
         self.sig = sig
         self.skip_update = skip_update
+        self.distributed = distributed
         
-    def forward(self, iters, y_rec_gt, y_rec_gt_pred, waves, mel_input_length, ref_text, ref_lengths, use_ind, s_trg, ref_s=None):
+    def run(self, iters, y_rec_gt, y_rec_gt_pred, waves, mel_input_length,
+                ref_text, ref_lengths, use_ind, s_trg, ref_s=None):
         text_mask = length_to_mask(ref_lengths).to(ref_text.device)
         bert_dur = self.model.bert(ref_text, attention_mask=(~text_mask).int())
         d_en = self.model.bert_encoder(bert_dur).transpose(-1, -2) 
@@ -72,7 +78,7 @@ class SLMAdversarialLoss(torch.nn.Module):
             out = torch.nn.functional.conv1d(_s2s_pred_org.unsqueeze(0), 
                                          h.unsqueeze(1), 
                                          padding=h.shape[-1] - 1, groups=int(_text_length))[..., :l]
-            attn_preds.append(F.softmax(out.squeeze(), dim=0))
+            attn_preds.append(F.softmax(out.squeeze(0), dim=0))
 
             output_lengths.append(l)
 
@@ -110,6 +116,7 @@ class SLMAdversarialLoss(torch.nn.Module):
             mel_length_pred = output_lengths[bib]
             mel_length_gt = int(mel_input_length[bib].item() / 2)
             if mel_length_gt <= mel_len or mel_length_pred <= mel_len:
+                #print(f"skip. mel_len: {mel_len}, mel_len_gt: {mel_length_gt}, mel_len_pred: {mel_length_pred}")
                 continue
 
             sp.append(s_preds[bib])
@@ -126,7 +133,7 @@ class SLMAdversarialLoss(torch.nn.Module):
             if len(wav) >= self.batch_percentage * len(waves): # prevent OOM due to longer lengths
                 break
 
-        if len(sp) <= 1:
+        if len(sp) == 0:
             return None
             
         sp = torch.stack(sp)
@@ -134,7 +141,10 @@ class SLMAdversarialLoss(torch.nn.Module):
         en = torch.stack(en)
         p_en = torch.stack(p_en)
         
-        F0_fake, N_fake = self.model.predictor.F0Ntrain(p_en, sp[:, 128:])
+        if self.distributed:
+            F0_fake, N_fake = self.model.predictor.module.F0Ntrain(p_en, sp[:, 128:])
+        else:
+            F0_fake, N_fake = self.model.predictor.F0Ntrain(p_en, sp[:, 128:])
         y_pred = self.model.decoder(en, F0_fake, N_fake, sp[:, :128])
         
         # discriminator loss
@@ -146,46 +156,84 @@ class SLMAdversarialLoss(torch.nn.Module):
                 use_rec = False
 
             crop_size = min(wav.size(-1), y_pred.size(-1))
-            if use_rec: # use reconstructed (shorter lengths), do length invariant regularization
-                if wav.size(-1) > y_pred.size(-1):
-                    real_GP = wav[:, : , :crop_size]
-                    out_crop = self.wl.discriminator_forward(real_GP.detach().squeeze())
-                    out_org = self.wl.discriminator_forward(wav.detach().squeeze())
-                    loss_reg = F.l1_loss(out_crop, out_org[..., :out_crop.size(-1)])
+            if self.distributed:
+                if use_rec: # use reconstructed (shorter lengths), do length invariant regularization
+                    if wav.size(-1) > y_pred.size(-1):
+                        real_GP = wav[:, : , :crop_size]
+                        out_crop = self.wl.module.discriminator_forward(real_GP.detach().squeeze(1))
+                        out_org = self.wl.module.discriminator_forward(wav.detach().squeeze(1))
+                        loss_reg = F.l1_loss(out_crop, out_org[..., :out_crop.size(-1)])
 
-                    if np.random.randint(0, 2) == 0:
-                        d_loss = self.wl.discriminator(real_GP.detach().squeeze(), y_pred.detach().squeeze()).mean()
+                        if np.random.randint(0, 2) == 0:
+                            d_loss = self.wl.module.discriminator(real_GP.detach().squeeze(1), y_pred.detach().squeeze(1)).mean()
+                        else:
+                            d_loss = self.wl.module.discriminator(wav.detach().squeeze(1), y_pred.detach().squeeze(1)).mean()
                     else:
-                        d_loss = self.wl.discriminator(wav.detach().squeeze(), y_pred.detach().squeeze()).mean()
+                        real_GP = y_pred[:, : , :crop_size]
+                        out_crop = self.wl.module.discriminator_forward(real_GP.detach().squeeze(1))
+                        out_org = self.wl.module.discriminator_forward(y_pred.detach().squeeze(1))
+                        loss_reg = F.l1_loss(out_crop, out_org[..., :out_crop.size(-1)])
+
+                        if np.random.randint(0, 2) == 0:
+                            d_loss = self.wl.module.discriminator(wav.detach().squeeze(1), real_GP.detach().squeeze(1)).mean()
+                        else:
+                            d_loss = self.wl.module.discriminator(wav.detach().squeeze(1), y_pred.detach().squeeze(1)).mean()
+                    
+                    # regularization (ignore length variation)
+                    d_loss += loss_reg
+
+                    out_gt = self.wl.module.discriminator_forward(y_rec_gt.detach().squeeze(1))
+                    out_rec = self.wl.module.discriminator_forward(y_rec_gt_pred.detach().squeeze(1))
+
+                    # regularization (ignore reconstruction artifacts)
+                    d_loss += F.l1_loss(out_gt, out_rec)
+
                 else:
-                    real_GP = y_pred[:, : , :crop_size]
-                    out_crop = self.wl.discriminator_forward(real_GP.detach().squeeze())
-                    out_org = self.wl.discriminator_forward(y_pred.detach().squeeze())
-                    loss_reg = F.l1_loss(out_crop, out_org[..., :out_crop.size(-1)])
-
-                    if np.random.randint(0, 2) == 0:
-                        d_loss = self.wl.discriminator(wav.detach().squeeze(), real_GP.detach().squeeze()).mean()
-                    else:
-                        d_loss = self.wl.discriminator(wav.detach().squeeze(), y_pred.detach().squeeze()).mean()
-                
-                # regularization (ignore length variation)
-                d_loss += loss_reg
-
-                out_gt = self.wl.discriminator_forward(y_rec_gt.detach().squeeze())
-                out_rec = self.wl.discriminator_forward(y_rec_gt_pred.detach().squeeze())
-
-                # regularization (ignore reconstruction artifacts)
-                d_loss += F.l1_loss(out_gt, out_rec)
-
+                    d_loss = self.wl.module.discriminator(wav.detach().squeeze(1), y_pred.detach().squeeze(1)).mean()
             else:
-                d_loss = self.wl.discriminator(wav.detach().squeeze(), y_pred.detach().squeeze()).mean()
+                if use_rec: # use reconstructed (shorter lengths), do length invariant regularization
+                    if wav.size(-1) > y_pred.size(-1):
+                        real_GP = wav[:, : , :crop_size]
+                        out_crop = self.wl.module.discriminator_forward(real_GP.detach().squeeze(1))
+                        out_org = self.wl.module.discriminator_forward(wav.detach().squeeze(1))
+                        loss_reg = F.l1_loss(out_crop, out_org[..., :out_crop.size(-1)])
+
+                        if np.random.randint(0, 2) == 0:
+                            d_loss = self.wl.module.discriminator(real_GP.detach().squeeze(1), y_pred.detach().squeeze(1)).mean()
+                        else:
+                            d_loss = self.wl.module.discriminator(wav.detach().squeeze(1), y_pred.detach().squeeze(1)).mean()
+                    else:
+                        real_GP = y_pred[:, : , :crop_size]
+                        out_crop = self.wl.discriminator_forward(real_GP.detach().squeeze(1))
+                        out_org = self.wl.discriminator_forward(y_pred.detach().squeeze(1))
+                        loss_reg = F.l1_loss(out_crop, out_org[..., :out_crop.size(-1)])
+
+                        if np.random.randint(0, 2) == 0:
+                            d_loss = self.wl.discriminator(wav.detach().squeeze(1), real_GP.detach().squeeze(1)).mean()
+                        else:
+                            d_loss = self.wl.discriminator(wav.detach().squeeze(1), y_pred.detach().squeeze(1)).mean()
+                    
+                    # regularization (ignore length variation)
+                    d_loss += loss_reg
+
+                    out_gt = self.wl.discriminator_forward(y_rec_gt.detach().squeeze(1))
+                    out_rec = self.wl.discriminator_forward(y_rec_gt_pred.detach().squeeze(1))
+
+                    # regularization (ignore reconstruction artifacts)
+                    d_loss += F.l1_loss(out_gt, out_rec)
+
+                else:
+                    d_loss = self.wl.discriminator(wav.detach().squeeze(1), y_pred.detach().squeeze(1)).mean()
         else:
             d_loss = 0
             
         # generator loss
-        gen_loss = self.wl.generator(y_pred.squeeze())
-        
-        gen_loss = gen_loss.mean()
+        if self.distributed:
+            gen_loss = self.wl.module.generator(y_pred.squeeze(1))
+            gen_loss = gen_loss.mean()
+        else:
+            gen_loss = self.wl.generator(y_pred.squeeze(1))
+            gen_loss = gen_loss.mean()
         
         return d_loss, gen_loss, y_pred.detach().cpu().numpy()
     

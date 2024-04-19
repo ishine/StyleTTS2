@@ -1,0 +1,1 @@
+(cd /root/StyleTTS2; ./train_second_resume.sh)

@@ -27,6 +27,10 @@ from utils import *
 from losses import *
 from optimizers import build_optimizer
 import time
+from saver import Saver
+import signal
+import sys
+from pathlib import Path
 
 from accelerate import Accelerator
 from accelerate.utils import LoggerType
@@ -36,11 +40,20 @@ from torch.utils.tensorboard import SummaryWriter
 
 import logging
 from accelerate.logging import get_logger
-logger = get_logger(__name__, log_level="DEBUG")
+logger = get_logger(__name__, log_level="INFO")
 
-@click.command()
-@click.option('-p', '--config_path', default='Configs/config.yml', type=str)
-def main(config_path):
+def print_memory(tag : str = ""):
+    for i in range(torch.cuda.device_count()):
+         memory_percent = (torch.cuda.memory_allocated() /
+            torch.cuda.max_memory_allocated())
+         if len(tag):
+            tag = f"({tag})"
+         logging.info(
+            f"{tag} Memory usage on GPU {i}: {memory_percent:.1%} "
+            f"( {torch.cuda.memory_allocated():.9e}"
+            f" / {torch.cuda.max_memory_allocated():.9e} )")
+
+def ml_main(config_path):
     config = yaml.safe_load(open(config_path))
 
     log_dir = config['log_dir']
@@ -85,7 +98,8 @@ def main(config_path):
                                         batch_size=batch_size,
                                         num_workers=2,
                                         dataset_config={},
-                                        device=device)
+                                        device=device,
+                                        sr=sr)
 
     val_dataloader = build_dataloader(val_list,
                                       root_path,
@@ -95,7 +109,8 @@ def main(config_path):
                                       validation=True,
                                       num_workers=0,
                                       device=device,
-                                      dataset_config={})
+                                      dataset_config={},
+                                      sr=sr)
     
     with accelerator.main_process_first():
         # load pretrained ASR model
@@ -121,7 +136,11 @@ def main(config_path):
     
     model_params = recursive_munch(config['model_params'])
     multispeaker = model_params.multispeaker
-    model = build_model(model_params, text_aligner, pitch_extractor, plbert)
+    if multispeaker:
+        logging.info('Training multispeaker model')
+    else:
+        logging.info('Training single speaker model')
+    model = build_model(model_params, text_aligner, pitch_extractor, plbert, sr=sr)
 
     best_loss = float('inf')  # best test loss
     loss_train_record = list([])
@@ -148,13 +167,45 @@ def main(config_path):
         optimizer.optimizers[k] = accelerator.prepare(optimizer.optimizers[k])
         optimizer.schedulers[k] = accelerator.prepare(optimizer.schedulers[k])
     
+    saver = Saver(model, optimizer, config, epoch_tag = 'epoch_1st')
+
+    ckpt_batch_size = None
+    ckpt_batch_idx = 0
     with accelerator.main_process_first():
-        if config.get('pretrained_model', '') != '':
-            model, optimizer, start_epoch, iters = load_checkpoint(model,  optimizer, config['pretrained_model'],
-                                        load_only_params=config.get('load_only_params', True))
-        else:
+        pretrained_model = config.get('pretrained_model', '')
+        resume_model = saver.retrieve_best()
+        if config.get('resume', False) and (resume_model is not None):
+            logging.info(f'Resume model from {resume_model}')
+            assert (Path(resume_model).stem.startswith('epoch_1st_'))
+            (model, optimizer, start_epoch, iters,
+                ckpt_batch_idx, ckpt_batch_size) = load_checkpoint2(
+                    model,  optimizer, resume_model,
+                    load_only_params=False) # by definition of resuming
+        elif pretrained_model != '':
+            logging.info(f'Warm from pretrained model ({pretrained_model})')
+            if not os.path.exists(pretrained_model):
+                pretrained_model = os.path.join(log_dir, pretrained_model)
+            assert (Path(pretrained_model).stem.startswith('epoch_1st_'))
+            (model, optimizer, _, _,
+                _, _) = load_checkpoint2(
+                model,  optimizer, pretrained_model,
+                load_only_params=config.get('load_only_params', True))
             start_epoch = 0
             iters = 0
+        else:
+            logging.info('Starting fresh run')
+            start_epoch = 0
+            iters = 0
+
+    if ckpt_batch_size is not None and iters != 0:
+        if ckpt_batch_size != batch_size:
+            ckpt_batch_idx = (ckpt_batch_idx * ckpt_batch_size) // batch_size
+            logging.info(
+                f'Batch size mismatch (checkpoint: {ckpt_batch_size}, '
+                f'config: {batch_size}); recalculating batch index to {batch_idx}')
+
+    start_idx = ckpt_batch_idx
+    logging.info(f"Start index set to {ckpt_batch_idx}")
     
     # in case not distributed
     try:
@@ -163,7 +214,7 @@ def main(config_path):
         n_down = model.text_aligner.n_down
     
     # wrapped losses for compatibility with mixed precision
-    stft_loss = MultiResolutionSTFTLoss().to(device)
+    stft_loss = MultiResolutionSTFTLoss(sr=sr).to(device)
     gl = GeneratorLoss(model.mpd, model.msd).to(device)
     dl = DiscriminatorLoss(model.mpd, model.msd).to(device)
     wl = WavLMLoss(model_params.slm.model, 
@@ -171,13 +222,29 @@ def main(config_path):
                    sr, 
                    model_params.slm.sr).to(device)
 
+    loss_test = None
+    iters_test = None
+
     for epoch in range(start_epoch, epochs):
         running_loss = 0
         start_time = time.time()
 
         _ = [model[key].train() for key in model]
-
         for i, batch in enumerate(train_dataloader):
+            with torch.no_grad():
+                if i < start_idx:
+                    continue
+                def sigterm_handler(signum, frame):
+                    logging.info("SIGTERM received, attempting save...")
+                    if loss_test is None:
+                        val_loss = None
+                    else:
+                        val_loss = loss_test / iters_test
+                    saver.try_save(epoch, iters, val_loss, i, batch_size)
+                    logging.info("Save completed")
+                    sys.exit(0)
+                signal.signal(signal.SIGTERM, sigterm_handler)
+
             waves = batch[0]
             batch = [b.to(device) for b in batch[1:]]
             texts, input_lengths, _, _, mels, mel_input_length, _ = batch
@@ -295,6 +362,9 @@ def main(config_path):
             
             running_loss += accelerator.gather(loss_mel).mean().item()
 
+            #import pdb
+            #pdb.set_trace()
+
             accelerator.backward(g_loss)
             
             optimizer.step('text_encoder')
@@ -303,7 +373,7 @@ def main(config_path):
             
             if epoch >= TMA_epoch: 
                 optimizer.step('text_aligner')
-                optimizer.step('pitch_extractor')
+                #optimizer.step('pitch_extractor')
             
             iters = iters + 1
             
@@ -321,7 +391,14 @@ def main(config_path):
                 running_loss = 0
                 
                 print('Time elasped:', time.time()-start_time)
+
+            if loss_test is None:
+                val_loss = None
+            else:
+                val_loss = loss_test / iters_test
+            saver.step_hook(epoch, iters, val_loss, i, batch_size)
                                 
+        start_idx = 0
         loss_test = 0
 
         _ = [model[key].eval() for key in model]
@@ -400,7 +477,6 @@ def main(config_path):
                     en = asr[bib, :, :mel_length // 2].unsqueeze(0)
                                         
                     F0_real, _, _ = model.pitch_extractor(gt.unsqueeze(1))
-                    F0_real = F0_real.unsqueeze(0)
                     s = model.style_encoder(gt.unsqueeze(1))
                     real_norm = log_norm(gt.unsqueeze(1)).squeeze(1)
                     
@@ -413,19 +489,10 @@ def main(config_path):
                     if bib >= 6:
                         break
 
-            if epoch % saving_epoch == 0:
-                if (loss_test / iters_test) < best_loss:
-                    best_loss = loss_test / iters_test
-                print('Saving..')
-                state = {
-                    'net':  {key: model[key].state_dict() for key in model}, 
-                    'optimizer': optimizer.state_dict(),
-                    'iters': iters,
-                    'val_loss': loss_test / iters_test,
-                    'epoch': epoch,
-                }
-                save_path = osp.join(log_dir, 'epoch_1st_%05d.pth' % epoch)
-                torch.save(state, save_path)
+            if (loss_test / iters_test) < best_loss:
+                best_loss = loss_test / iters_test
+
+            saver.epoch_hook(epoch+1, iters, loss_test / iters_test, 0, batch_size)
                                 
     if accelerator.is_main_process:
         print('Saving..')
@@ -439,7 +506,20 @@ def main(config_path):
         save_path = osp.join(log_dir, config.get('first_stage_path', 'first_stage.pth'))
         torch.save(state, save_path)
 
+@click.command()
+@click.option('-p', '--config_path', default='Configs/config.yml', type=str)
+def main(config_path):
+    try:
+        ml_main(config_path)
+    except RuntimeError as e:
+        if "CUDA out of memory" in str(e):
+            # HF accelerate intercepts exit codes and always exits 1,
+            # so we need to use a file to signal this instead
+            logging.warn("Out of memory error encountered. Setting OOM flag file...")
+            open("oom_status", "w").close()
+            logging.warn("Set")
+        else:
+            raise
         
-    
 if __name__=="__main__":
     main()
