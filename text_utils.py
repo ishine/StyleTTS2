@@ -1,9 +1,13 @@
 # IPA Phonemizer: https://github.com/bootphon/phonemizer
 
 _pad = "$"
-_punctuation = ';:,.!?¡¿—…"«»“” '
+_punctuation = '：；,12345—…、，。！？ '
 _letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz'
 _letters_ipa = "ɑɐɒæɓʙβɔɕçɗɖðʤəɘɚɛɜɝɞɟʄɡɠɢʛɦɧħɥʜɨɪʝɭɬɫɮʟɱɯɰŋɳɲɴøɵɸθœɶʘɹɺɾɻʀʁɽʂʃʈʧʉʊʋⱱʌɣɤʍχʎʏʑʐʒʔʡʕʢǀǁǂǃˈˌːˑʼʴʰʱʲʷˠˤ˞↓↑→↗↘'̩'ᵻ"
+
+# _punctuation = ';:,.!?¡¿—…"«»“” '
+# _letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz'
+# _letters_ipa = "ɑɐɒæɓʙβɔɕçɗɖðʤəɘɚɛɜɝɞɟʄɡɠɢʛɦɧħɥʜɨɪʝɭɬɫɮʟɱɯɰŋɳɲɴøɵɸθœɶʘɹɺɾɻʀʁɽʂʃʈʧʉʊʋⱱʌɣɤʍχʎʏʑʐʒʔʡʕʢǀǁǂǃˈˌːˑʼʴʰʱʲʷˠˤ˞↓↑→↗↘'̩'ᵻ"
 
 # Export all symbols:
 symbols = [_pad] + list(_punctuation) + list(_letters) + list(_letters_ipa)
@@ -22,5 +26,6 @@ class TextCleaner:
             try:
                 indexes.append(self.word_index_dictionary[char])
             except KeyError:
-                print(text)
+                # print(text)
+                continue
         return indexes

@@ -16,7 +16,7 @@ warnings.simplefilter('ignore')
 from torch.utils.tensorboard import SummaryWriter
 
 from meldataset import build_dataloader
-
+import wandb
 from Utils.ASR.models import ASRCNN
 from Utils.JDC.model import JDCNet
 from Utils.PLBERT.util import load_plbert
@@ -54,6 +54,7 @@ logger.addHandler(handler)
 @click.command()
 @click.option('-p', '--config_path', default='Configs/config_ft.yml', type=str)
 def main(config_path):
+    wandb.init()
     config = yaml.safe_load(open(config_path))
     
     log_dir = config['log_dir']
@@ -551,7 +552,8 @@ def main(config_path):
             if (i+1)%log_interval == 0:
                 logger.info ('Epoch [%d/%d], Step [%d/%d], Loss: %.5f, Disc Loss: %.5f, Dur Loss: %.5f, CE Loss: %.5f, Norm Loss: %.5f, F0 Loss: %.5f, LM Loss: %.5f, Gen Loss: %.5f, Sty Loss: %.5f, Diff Loss: %.5f, DiscLM Loss: %.5f, GenLM Loss: %.5f, SLoss: %.5f, S2S Loss: %.5f, Mono Loss: %.5f'
                     %(epoch+1, epochs, i+1, len(train_list)//batch_size, running_loss / log_interval, d_loss, loss_dur, loss_ce, loss_norm_rec, loss_F0_rec, loss_lm, loss_gen_all, loss_sty, loss_diff, d_loss_slm, loss_gen_lm, s_loss, loss_s2s, loss_mono))
-                
+                print('Epoch [%d/%d], Step [%d/%d], Loss: %.5f, Disc Loss: %.5f, Dur Loss: %.5f, CE Loss: %.5f, Norm Loss: %.5f, F0 Loss: %.5f, LM Loss: %.5f, Gen Loss: %.5f, Sty Loss: %.5f, Diff Loss: %.5f, DiscLM Loss: %.5f, GenLM Loss: %.5f, SLoss: %.5f, S2S Loss: %.5f, Mono Loss: %.5f'
+                    %(epoch+1, epochs, i+1, len(train_list)//batch_size, running_loss / log_interval, d_loss, loss_dur, loss_ce, loss_norm_rec, loss_F0_rec, loss_lm, loss_gen_all, loss_sty, loss_diff, d_loss_slm, loss_gen_lm, s_loss, loss_s2s, loss_mono))               
                 writer.add_scalar('train/mel_loss', running_loss / log_interval, iters)
                 writer.add_scalar('train/gen_loss', loss_gen_all, iters)
                 writer.add_scalar('train/d_loss', d_loss, iters)
@@ -564,7 +566,19 @@ def main(config_path):
                 writer.add_scalar('train/diff_loss', loss_diff, iters)
                 writer.add_scalar('train/d_loss_slm', d_loss_slm, iters)
                 writer.add_scalar('train/gen_loss_slm', loss_gen_lm, iters)
-                
+
+                wandb.log({'train/mel_loss': running_loss / log_interval})
+                wandb.log({'train/gen_loss': loss_gen_all})
+                wandb.log({'train/d_loss': d_loss})
+                wandb.log({'train/ce_loss': loss_ce})
+                wandb.log({'train/dur_loss': loss_dur})
+                wandb.log({'train/slm_loss': loss_lm})
+                wandb.log({'train/norm_loss': loss_norm_rec})
+                wandb.log({'train/F0_loss': loss_F0_rec})
+                wandb.log({'train/sty_loss': loss_sty})
+                wandb.log({'train/diff_loss': loss_diff})
+                wandb.log({'train/d_loss_slm': d_loss_slm})
+                wandb.log({'train/gen_loss_slm': loss_gen_lm})                
                 running_loss = 0
                 
                 print('Time elasped:', time.time()-start_time)
@@ -687,7 +701,9 @@ def main(config_path):
         writer.add_scalar('eval/dur_loss', loss_test / iters_test, epoch + 1)
         writer.add_scalar('eval/F0_loss', loss_f / iters_test, epoch + 1)
         
-        
+        wandb.log({'eval/mel_loss': loss_test / iters_test})
+        wandb.log({'eval/dur_loss': loss_test / iters_test})
+        wandb.log({'eval/F0_loss': loss_f / iters_test})        
         if (epoch + 1) % save_freq == 0 :
             if (loss_test / iters_test) < best_loss:
                 best_loss = loss_test / iters_test

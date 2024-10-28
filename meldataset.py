@@ -21,12 +21,18 @@ logger.setLevel(logging.DEBUG)
 import pandas as pd
 
 _pad = "$"
-_punctuation = ';:,.!?¡¿—…"«»“” '
+# _punctuation = ';:,.!?¡¿—…"«»“” '
+_punctuation = '：；,12345—…、，。！？ '
 _letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz'
 _letters_ipa = "ɑɐɒæɓʙβɔɕçɗɖðʤəɘɚɛɜɝɞɟʄɡɠɢʛɦɧħɥʜɨɪʝɭɬɫɮʟɱɯɰŋɳɲɴøɵɸθœɶʘɹɺɾɻʀʁɽʂʃʈʧʉʊʋⱱʌɣɤʍχʎʏʑʐʒʔʡʕʢǀǁǂǃˈˌːˑʼʴʰʱʲʷˠˤ˞↓↑→↗↘'̩'ᵻ"
+# _tones = "12345"
+# _chinese_punctuation = "，。！？（）、「」：；"
+# _vowels = "˧˩˧˥˩˥˧"
 
 # Export all symbols:
-symbols = [_pad] + list(_punctuation) + list(_letters) + list(_letters_ipa)
+symbols = [_pad] + list(_punctuation) + list(_letters) + list(_letters_ipa) 
+# + list(_tones) + list(_chinese_punctuation)
+# list(_chinese_punctuation) + list(_vowels)
 
 dicts = {}
 for i in range(len((symbols))):
@@ -41,7 +47,9 @@ class TextCleaner:
             try:
                 indexes.append(self.word_index_dictionary[char])
             except KeyError:
-                print(text)
+                continue
+                # print("error")
+                # print(char , " | ", text)
         return indexes
 
 np.random.seed(1)
@@ -143,7 +151,7 @@ class FilePathDataset(torch.utils.data.Dataset):
             wave = wave[:, 0].squeeze()
         if sr != 24000:
             wave = librosa.resample(wave, orig_sr=sr, target_sr=24000)
-            print(wave_path, sr)
+            # print(wave_path, sr)
             
         wave = np.concatenate([np.zeros([5000]), wave, np.zeros([5000])], axis=0)
         

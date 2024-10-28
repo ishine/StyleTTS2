@@ -2,7 +2,7 @@ import torch
 from torch import nn
 import torch.nn.functional as F
 import torchaudio
-from transformers import AutoModel
+from transformers import AutoModel, AutoFeatureExtractor
 
 class SpectralConvergengeLoss(torch.nn.Module):
     """Spectral convergence loss module."""
@@ -194,16 +194,34 @@ class WavLMLoss(torch.nn.Module):
 
     def __init__(self, model, wd, model_sr, slm_sr=16000):
         super(WavLMLoss, self).__init__()
+        self.model_name = model
         self.wavlm = AutoModel.from_pretrained(model)
+        if "whisper" in model:
+            self.feature_extractor = AutoFeatureExtractor.from_pretrained(model)
         self.wd = wd
         self.resample = torchaudio.transforms.Resample(model_sr, slm_sr)
      
     def forward(self, wav, y_rec):
+        device = wav.device
         with torch.no_grad():
             wav_16 = self.resample(wav)
-            wav_embeddings = self.wavlm(input_values=wav_16, output_hidden_states=True).hidden_states
+            if "whisper" in self.model_name:
+                inputs = self.feature_extractor(wav_16.cpu(), return_tensors="pt")
+                input_features = inputs.input_features
+                input_features = input_features.to(device)
+                wav_embeddings = self.wavlm(input_features.squeeze(), output_hidden_states=True).hidden_states
+                # decoder_input_ids = torch.tensor([[1, 1]]) * model.config.decoder_start_token_id
+                # wav_embeddings = self.wavlm(input_features, decoder_input_ids=decoder_input_ids).last_hidden_state
+            else:
+                wav_embeddings = self.wavlm(input_values=wav_16, output_hidden_states=True).hidden_states
         y_rec_16 = self.resample(y_rec)
-        y_rec_embeddings = self.wavlm(input_values=y_rec_16.squeeze(), output_hidden_states=True).hidden_states
+        if "whisper" in self.model_name:
+            inputs_rec = self.feature_extractor(y_rec_16.cpu(), return_tensors="pt")
+            input_features_rec = inputs_rec.input_features
+            input_features_rec = input_features_rec.to(device)
+            y_rec_embeddings = self.wavlm(input_features_rec.squeeze(), output_hidden_states=True).hidden_states
+        else:
+            y_rec_embeddings = self.wavlm(input_values=y_rec_16.squeeze(), output_hidden_states=True).hidden_states
 
         floss = 0
         for er, eg in zip(wav_embeddings, y_rec_embeddings):

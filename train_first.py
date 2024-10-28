@@ -33,7 +33,7 @@ from accelerate.utils import LoggerType
 from accelerate import DistributedDataParallelKwargs
 
 from torch.utils.tensorboard import SummaryWriter
-
+import wandb
 import logging
 from accelerate.logging import get_logger
 logger = get_logger(__name__, log_level="DEBUG")
@@ -41,6 +41,8 @@ logger = get_logger(__name__, log_level="DEBUG")
 @click.command()
 @click.option('-p', '--config_path', default='Configs/config.yml', type=str)
 def main(config_path):
+    wandb.init()
+
     config = yaml.safe_load(open(config_path))
 
     log_dir = config['log_dir']
@@ -310,13 +312,22 @@ def main(config_path):
             if (i+1)%log_interval == 0 and accelerator.is_main_process:
                 log_print ('Epoch [%d/%d], Step [%d/%d], Mel Loss: %.5f, Gen Loss: %.5f, Disc Loss: %.5f, Mono Loss: %.5f, S2S Loss: %.5f, SLM Loss: %.5f'
                         %(epoch+1, epochs, i+1, len(train_list)//batch_size, running_loss / log_interval, loss_gen_all, d_loss, loss_mono, loss_s2s, loss_slm), logger)
-                
+                print('Epoch [%d/%d], Step [%d/%d], Mel Loss: %.5f, Gen Loss: %.5f, Disc Loss: %.5f, Mono Loss: %.5f, S2S Loss: %.5f, SLM Loss: %.5f'
+                        %(epoch+1, epochs, i+1, len(train_list)//batch_size, running_loss / log_interval, loss_gen_all, d_loss, loss_mono, loss_s2s, loss_slm))               
                 writer.add_scalar('train/mel_loss', running_loss / log_interval, iters)
                 writer.add_scalar('train/gen_loss', loss_gen_all, iters)
                 writer.add_scalar('train/d_loss', d_loss, iters)
                 writer.add_scalar('train/mono_loss', loss_mono, iters)
                 writer.add_scalar('train/s2s_loss', loss_s2s, iters)
                 writer.add_scalar('train/slm_loss', loss_slm, iters)
+
+
+                wandb.log({'train/mel_loss': running_loss / log_interval})
+                wandb.log({'train/gen_loss': loss_gen_all})
+                wandb.log({'train/d_loss': d_loss})
+                wandb.log({'train/mono_loss': loss_mono})
+                wandb.log({'train/s2s_loss': loss_s2s})
+                wandb.log({'train/slm_loss': loss_slm})
 
                 running_loss = 0
                 
@@ -392,7 +403,12 @@ def main(config_path):
             writer.add_scalar('eval/mel_loss', loss_test / iters_test, epoch + 1)
             attn_image = get_image(s2s_attn[0].cpu().numpy().squeeze())
             writer.add_figure('eval/attn', attn_image, epoch)
-            
+
+
+            wandb.log({'eval/mel_loss': loss_test / iters_test})
+            attn_image = get_image(s2s_attn[0].cpu().numpy().squeeze())
+            # writer.add_figure('eval/attn', attn_image, epoch)
+               
             with torch.no_grad():
                 for bib in range(len(asr)):
                     mel_length = int(mel_input_length[bib].item())
@@ -407,9 +423,11 @@ def main(config_path):
                     y_rec = model.decoder(en, F0_real, real_norm, s)
                     
                     writer.add_audio('eval/y' + str(bib), y_rec.cpu().numpy().squeeze(), epoch, sample_rate=sr)
+                    wandb.log({"eval/y"  + str(bib): wandb.Audio(y_rec.cpu().numpy().squeeze(), caption=str(epoch), sample_rate=sr)})
+
                     if epoch == 0:
                         writer.add_audio('gt/y' + str(bib), waves[bib].squeeze(), epoch, sample_rate=sr)
-                    
+                        wandb.log({"gt/y"  + str(bib): wandb.Audio(waves[bib].squeeze(), caption=str(epoch), sample_rate=sr)})        
                     if bib >= 6:
                         break
 

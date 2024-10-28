@@ -284,8 +284,9 @@ class LayerNorm(nn.Module):
 class TextEncoder(nn.Module):
     def __init__(self, channels, kernel_size, depth, n_symbols, actv=nn.LeakyReLU(0.2)):
         super().__init__()
+        print("n_symbols", n_symbols)
         self.embedding = nn.Embedding(n_symbols, channels)
-
+        # exit()
         padding = (kernel_size - 1) // 2
         self.cnn = nn.ModuleList()
         for _ in range(depth):
@@ -699,7 +700,21 @@ def load_checkpoint(model, optimizer, path, load_only_params=True, ignore_module
     for key in model:
         if key in params and key not in ignore_modules:
             print('%s loaded' % key)
-            model[key].load_state_dict(params[key], strict=False)
+            try:
+                model[key].load_state_dict(params[key], strict=False)
+                
+            except:
+                # print(params[key].keys())
+                # print(len(params[key]))
+                # print(len(params[key][0]))
+                print(params[key]["module.embedding.weight"].shape)
+                new_weights = torch.empty((193, 512))
+                nn.init.xavier_uniform_(new_weights)
+                # new_weights = torch.zeros(params[key].shape)
+                new_weights[:178, :] = params[key]["module.embedding.weight"]
+                params[key]["module.embedding.weight"] = new_weights
+                model[key].load_state_dict(params[key], strict=False)
+
     _ = [model[key].eval() for key in model]
     
     if not load_only_params:
