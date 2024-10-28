@@ -1,25 +1,19 @@
 import os
 import os.path as osp
-import re
-import sys
 import yaml
 import shutil
 import numpy as np
 import torch
 import click
-import warnings
-warnings.simplefilter('ignore')
-
-# load packages
 import random
 import yaml
 from munch import Munch
 import numpy as np
 import torch
-from torch import nn
 import torch.nn.functional as F
-import torchaudio
-import librosa
+import warnings
+warnings.simplefilter('ignore')
+from monotonic_align import mask_from_lens
 
 from models import *
 from meldataset import build_dataloader
@@ -29,7 +23,6 @@ from optimizers import build_optimizer
 import time
 
 from accelerate import Accelerator
-from accelerate.utils import LoggerType
 from accelerate import DistributedDataParallelKwargs
 
 from torch.utils.tensorboard import SummaryWriter
@@ -61,7 +54,6 @@ def main(config_path):
     device = accelerator.device
     
     epochs = config.get('epochs_1st', 200)
-    save_freq = config.get('save_freq', 2)
     log_interval = config.get('log_interval', 10)
     saving_epoch = config.get('save_freq', 2)
     
@@ -72,8 +64,13 @@ def main(config_path):
     root_path = data_params['root_path']
     min_length = data_params['min_length']
     OOD_data = data_params['OOD_data']
+    save_val_audio = data_params.get('save_val_audio', False)
+    save_test_audio = data_params.get('save_test_audio', False)
+    test_sentences = data_params.get('test_sentences', [])
+    test_audio_dir = os.path.join(config['log_dir'], config['data_params'].get('test_audio_dir', 'test_audios'))
     
     max_len = config.get('max_len', 200)
+    grad_clip = config.get('grad_clip', None)
     
     # load data
     train_list, val_list = get_data_path_list(train_path, val_path)
@@ -124,8 +121,8 @@ def main(config_path):
     model = build_model(model_params, text_aligner, pitch_extractor, plbert)
 
     best_loss = float('inf')  # best test loss
-    loss_train_record = list([])
-    loss_test_record = list([])
+    # loss_train_record = list([])
+    # loss_test_record = list([])
 
     loss_params = Munch(config['loss_params'])
     TMA_epoch = loss_params.TMA_epoch
@@ -140,9 +137,10 @@ def main(config_path):
     _ = [model[key].to(device) for key in model]
 
     # initialize optimizers after preparing models for compatibility with FSDP
-    optimizer = build_optimizer({key: model[key].parameters() for key in model},
-                                  scheduler_params_dict= {key: scheduler_params.copy() for key in model},
-                               lr=float(config['optimizer_params'].get('lr', 1e-4)))
+    parameters_dict = {key: model[key].parameters() for key in model}
+    scheduler_params_dict = {key: scheduler_params.copy() for key in model}
+    lr = float(config['optimizer_params'].get('lr', 1e-4))
+    optimizer = build_optimizer(parameters_dict, scheduler_params_dict, lr)
     
     for k, v in optimizer.optimizers.items():
         optimizer.optimizers[k] = accelerator.prepare(optimizer.optimizers[k])
@@ -150,8 +148,17 @@ def main(config_path):
     
     with accelerator.main_process_first():
         if config.get('pretrained_model', '') != '':
-            model, optimizer, start_epoch, iters = load_checkpoint(model,  optimizer, config['pretrained_model'],
-                                        load_only_params=config.get('load_only_params', True))
+            model, optimizer, start_epoch, iters = load_checkpoint(
+                model,
+                optimizer,
+                config['pretrained_model'],
+                load_only_params=config.get('load_only_params', True))
+            # # advance start epoch or we'd re-train and rewrite the last epoch file
+            # start_epoch += 1
+            print(f'Loading pre-trained model: {config["pretrained_model"]}')
+            print(f'Starting epoch:      {start_epoch}')
+            print(f'Starting iterations: {iters}')
+            print()
         else:
             start_epoch = 0
             iters = 0
@@ -171,6 +178,11 @@ def main(config_path):
                    sr, 
                    model_params.slm.sr).to(device)
 
+    # Create test audio dir under log/eval dir
+    if (save_val_audio or save_test_audio) and not os.path.exists(test_audio_dir):
+        os.makedirs(test_audio_dir, exist_ok=True)
+
+    # Train model
     for epoch in range(start_epoch, epochs):
         running_loss = 0
         start_time = time.time()
@@ -260,6 +272,9 @@ def main(config_path):
                 optimizer.zero_grad()
                 d_loss = dl(wav.detach().unsqueeze(1).float(), y_rec.detach()).mean()
                 accelerator.backward(d_loss)
+                # JMa: gradient clipping
+                if grad_clip:
+                    _ = [accelerator.clip_grad_norm_(model[k].parameters(), grad_clip) for k in model]
                 optimizer.step('msd')
                 optimizer.step('mpd')
             else:
@@ -296,6 +311,9 @@ def main(config_path):
             running_loss += accelerator.gather(loss_mel).mean().item()
 
             accelerator.backward(g_loss)
+            # JMa: gradient clipping
+            if grad_clip:
+                _ = [accelerator.clip_grad_norm_(model[k].parameters(), grad_clip) for k in model]
             
             optimizer.step('text_encoder')
             optimizer.step('style_encoder')
@@ -303,7 +321,9 @@ def main(config_path):
             
             if epoch >= TMA_epoch: 
                 optimizer.step('text_aligner')
-                optimizer.step('pitch_extractor')
+                # JMa: pitch extractor should not be updated, see:
+                # https://github.com/yl4579/StyleTTS2/issues/10#issuecomment-1783701686
+                # optimizer.step('pitch_extractor')
             
             iters = iters + 1
             
@@ -320,7 +340,7 @@ def main(config_path):
 
                 running_loss = 0
                 
-                print('Time elasped:', time.time()-start_time)
+                print('Time elapsed:', time.time()-start_time)
                                 
         loss_test = 0
 
@@ -406,9 +426,24 @@ def main(config_path):
                     
                     y_rec = model.decoder(en, F0_real, real_norm, s)
                     
-                    writer.add_audio('eval/y' + str(bib), y_rec.cpu().numpy().squeeze(), epoch, sample_rate=sr)
+                    # Write and save val audio
+                    wav = y_rec.cpu().numpy().squeeze()
+                    writer.add_audio('eval/y' + str(bib), wav, epoch, sample_rate=sr)
+                    if save_val_audio and epoch % saving_epoch == 0:
+                        outfile_template = f'epoch_1st_{epoch:0>5}'
+                        out_file = f'{outfile_template}_val-{bib}.wav'
+                        scipy.io.wavfile.write(filename=os.path.join(test_audio_dir, out_file),
+                                               rate=config['preprocess_params']['sr'], 
+                                               data=wav)
+                    # Write and save ground-truth audio
                     if epoch == 0:
-                        writer.add_audio('gt/y' + str(bib), waves[bib].squeeze(), epoch, sample_rate=sr)
+                        wav = waves[bib].squeeze()
+                        writer.add_audio('gt/y' + str(bib), wav, epoch, sample_rate=sr)
+                        if save_val_audio:
+                            out_file = f'{outfile_template}_gt-{bib}.wav'
+                            scipy.io.wavfile.write(filename=os.path.join(test_audio_dir, out_file),
+                                                   rate=config['preprocess_params']['sr'], 
+                                                   data=wav)
                     
                     if bib >= 6:
                         break
@@ -416,7 +451,7 @@ def main(config_path):
             if epoch % saving_epoch == 0:
                 if (loss_test / iters_test) < best_loss:
                     best_loss = loss_test / iters_test
-                print('Saving..')
+                print(f'Saving to epoch_1st_{epoch:0>5}.pth...')
                 state = {
                     'net':  {key: model[key].state_dict() for key in model}, 
                     'optimizer': optimizer.state_dict(),
@@ -424,11 +459,23 @@ def main(config_path):
                     'val_loss': loss_test / iters_test,
                     'epoch': epoch,
                 }
-                save_path = osp.join(log_dir, 'epoch_1st_%05d.pth' % epoch)
+                save_path = osp.join(log_dir, f'epoch_1st_{epoch:0>5}.pth')
                 torch.save(state, save_path)
-                                
+
+                # JMa: synthesize test audios
+                if save_test_audio:
+                    synth_test_files(model,
+                                     test_sentences,
+                                     test_audio_dir,
+                                    f'epoch_1st_{epoch:0>5}_test',
+                                    sr,
+                                    sampler=None,
+                                    diffusion_steps=5,
+                                    embedding_scale=1,
+                                    device=device)
+    
     if accelerator.is_main_process:
-        print('Saving..')
+        print(f'Saving to final first-stage model...')
         state = {
             'net':  {key: model[key].state_dict() for key in model}, 
             'optimizer': optimizer.state_dict(),

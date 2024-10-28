@@ -69,7 +69,7 @@ def main(config_path):
     epochs = config.get('epochs', 200)
     save_freq = config.get('save_freq', 2)
     log_interval = config.get('log_interval', 10)
-    saving_epoch = config.get('save_freq', 2)
+    # saving_epoch = config.get('save_freq', 2)
 
     data_params = config.get('data_params', None)
     sr = config['preprocess_params'].get('sr', 24000)
@@ -80,6 +80,7 @@ def main(config_path):
     OOD_data = data_params['OOD_data']
 
     max_len = config.get('max_len', 200)
+    grad_clip = config.get('grad_clip', None)
     
     loss_params = Munch(config['loss_params'])
     diff_epoch = loss_params.diff_epoch
@@ -90,6 +91,7 @@ def main(config_path):
     train_list, val_list = get_data_path_list(train_path, val_path)
     device = 'cuda'
 
+    # load data
     train_dataloader = build_dataloader(train_list,
                                         root_path,
                                         OOD_data=OOD_data,
@@ -210,7 +212,9 @@ def main(config_path):
     if load_pretrained:
         model, optimizer, start_epoch, iters = load_checkpoint(model,  optimizer, config['pretrained_model'],
                                     load_only_params=config.get('load_only_params', True))
-        
+        # advance start epoch or we'd re-train and rewrite the last epoch file
+        start_epoch += 1
+        print('\nmodel data loaded, starting training epoch %05d\n' % start_epoch)
     n_down = model.text_aligner.n_down
 
     best_loss = float('inf')  # best test loss
@@ -560,7 +564,7 @@ def main(config_path):
                 
                 running_loss = 0
                 
-                print('Time elasped:', time.time()-start_time)
+                print('Time elapsed:', time.time()-start_time)
             
         loss_test = 0
         loss_align = 0
