@@ -1,15 +1,18 @@
-log_dir: "Models/LJSpeech"
+log_dir: "/your/output/dir"
 first_stage_path: "first_stage.pth"
 save_freq: 2
 log_interval: 10
+val_interval: 2000 # validate model every this number of iterations
+save_interval: 2000 # validate and save model every this number of iterations
 device: "cuda"
 epochs_1st: 200 # number of epochs for first stage training (pre-training)
 epochs_2nd: 100 # number of peochs for second stage training (joint training)
-batch_size: 16
-max_len: 400 # maximum number of frames
+max_len: 6400 # maximum number of frames * max batch size
 pretrained_model: ""
 second_stage_load_pretrained: true # set to true if the pre-trained model is for 2nd stage
 load_only_params: false # set to true if do not want to load epoch numbers and optimizer parameters
+debug: false # will add extra debug logging during training
+precision: "fp32" # set to "fp16" or "bf16" for mixed precision training
 
 F0_path: "Utils/JDC/bst.t7"
 ASR_config: "Utils/ASR/config.yml"
@@ -17,9 +20,10 @@ ASR_path: "Utils/ASR/epoch_00080.pth"
 PLBERT_dir: 'Utils/PLBERT/'
 
 data_params:
-  train_data: "Data/train_list.txt"
-  val_data: "Data/val_list.txt"
-  root_path: "/local/LJSpeech-1.1/wavs"
+  train_data: "/your/train/dir"
+  train_bin_count: 76 # Assumes max segment length of 20 seconds
+  val_data: "/your/val_list.txt"
+  root_path: "/your/wav/dir"
   OOD_data: "Data/OOD_texts.txt"
   min_length: 50 # sample until texts with this size are obtained for OOD texts
 
@@ -32,6 +36,8 @@ preprocess_params:
 
 model_params:
   multispeaker: false
+
+  # skip_downsamples: False # set to True if you want to skip downsampling to allow for shorter segments
 
   dim_in: 64 
   hidden_dim: 512
