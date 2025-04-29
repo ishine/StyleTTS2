@@ -1,5 +1,5 @@
 # load packages
-import random
+import re
 import yaml
 import time
 from munch import Munch
@@ -30,6 +30,9 @@ from Modules.slmadv import SLMAdversarialLoss
 from Modules.diffusion.sampler import DiffusionSampler, ADPM2Sampler, KarrasSchedule
 
 from optimizers import build_optimizer
+
+import pdb
+
 
 # simple fix for dataparallel that allows access to class attributes
 class MyDataParallel(torch.nn.DataParallel):
@@ -69,11 +72,12 @@ def main(config_path):
 
     epochs = config.get('epochs_2nd', 200)
     save_freq = config.get('save_freq', 2)
+    save_interval = config.get('save_interval', 36000)
     log_interval = config.get('log_interval', 10)
     saving_epoch = config.get('save_freq', 2)
 
     data_params = config.get('data_params', None)
-    sr = config['preprocess_params'].get('sr', 24000)
+    sr = config['preprocess_params'].get('sr', 36000)
     train_path = data_params['train_data']
     val_path = data_params['val_data']
     root_path = data_params['root_path']
@@ -120,13 +124,14 @@ def main(config_path):
     pitch_extractor = load_F0_models(F0_path)
     
     # load PL-BERT model
-    BERT_path = config.get('PLBERT_dir', False)
-    plbert = load_plbert(BERT_path)
+    # BERT_path = config.get('PLBERT_dir', False)
+    # plbert = load_plbert(BERT_path, use_checkpoint=False)
     
     # build model
     model_params = recursive_munch(config['model_params'])
     multispeaker = model_params.multispeaker
-    model = build_model(model_params, text_aligner, pitch_extractor, plbert)
+    # model = build_model(model_params, text_aligner, pitch_extractor, plbert)
+    model = build_model(model_params, text_aligner, pitch_extractor, None)
     _ = [model[key].to(device) for key in model]
     
     # DP
@@ -155,9 +160,12 @@ def main(config_path):
             epochs += start_epoch
             
             model.predictor_encoder = copy.deepcopy(model.style_encoder)
+            model.prosodic_text_encoder = copy.deepcopy(model.text_encoder)
+            # model.prosodic_text_encoder.load_state_dict(model.text_encoder.state_dict(), strict=True)
+            # pdb.set_trace()
         else:
             raise ValueError('You need to specify the path to the first stage model.') 
-
+    
     gl = GeneratorLoss(model.mpd, model.msd).to(device)
     dl = DiscriminatorLoss(model.mpd, model.msd).to(device)
     wl = WavLMLoss(model_params.slm.model, 
@@ -183,7 +191,7 @@ def main(config_path):
         "steps_per_epoch": len(train_dataloader),
     }
     scheduler_params_dict= {key: scheduler_params.copy() for key in model}
-    scheduler_params_dict['bert']['max_lr'] = optimizer_params.bert_lr * 2
+    # scheduler_params_dict['bert']['max_lr'] = optimizer_params.bert_lr * 2
     scheduler_params_dict['decoder']['max_lr'] = optimizer_params.ft_lr * 2
     scheduler_params_dict['style_encoder']['max_lr'] = optimizer_params.ft_lr * 2
     
@@ -191,12 +199,12 @@ def main(config_path):
                                           scheduler_params_dict=scheduler_params_dict, lr=optimizer_params.lr)
     
     # adjust BERT learning rate
-    for g in optimizer.optimizers['bert'].param_groups:
-        g['betas'] = (0.9, 0.99)
-        g['lr'] = optimizer_params.bert_lr
-        g['initial_lr'] = optimizer_params.bert_lr
-        g['min_lr'] = 0
-        g['weight_decay'] = 0.01
+    # for g in optimizer.optimizers['bert'].param_groups:
+    #     g['betas'] = (0.9, 0.99)
+    #     g['lr'] = optimizer_params.bert_lr
+    #     g['initial_lr'] = optimizer_params.bert_lr
+    #     g['min_lr'] = 0
+    #     g['weight_decay'] = 0.01
         
     # adjust acoustic module learning rate
     for module in ["decoder", "style_encoder"]:
@@ -211,6 +219,16 @@ def main(config_path):
     if load_pretrained:
         model, optimizer, start_epoch, iters = load_checkpoint(model,  optimizer, config['pretrained_model'],
                                     load_only_params=config.get('load_only_params', True))
+        if 'step' in config['pretrained_model']:
+                start_step = int(re.search('step_(.*?).pth', config['pretrained_model']).group(1)) + 2
+                print('Start step:', start_step)
+        else:
+            start_epoch += 1
+            start_step = 0
+    else:
+        start_epoch = 0
+        iters = 0
+        start_step = 0
         
     n_down = model.text_aligner.n_down
 
@@ -224,7 +242,7 @@ def main(config_path):
     
     stft_loss = MultiResolutionSTFTLoss().to(device)
     
-    print('BERT', optimizer.optimizers['bert'])
+    # print('BERT', optimizer.optimizers['bert'])
     print('decoder', optimizer.optimizers['decoder'])
 
     start_ds = False
@@ -248,8 +266,9 @@ def main(config_path):
         _ = [model[key].eval() for key in model]
 
         model.predictor.train()
-        model.bert_encoder.train()
-        model.bert.train()
+        # model.bert_encoder.train()
+        # model.bert.train()
+        model.prosodic_text_encoder.train()
         model.msd.train()
         model.mpd.train()
 
@@ -273,17 +292,16 @@ def main(config_path):
                     s2s_attn = s2s_attn[..., 1:]
                     s2s_attn = s2s_attn.transpose(-1, -2)
                 except:
+                    print('Error in alignment !!!')
                     continue
 
                 mask_ST = mask_from_lens(s2s_attn, input_lengths, mel_input_length // (2 ** n_down))
                 s2s_attn_mono = maximum_path(s2s_attn, mask_ST)
-
                 # encode
                 t_en = model.text_encoder(texts, input_lengths, text_mask)
                 asr = (t_en @ s2s_attn_mono)
 
                 d_gt = s2s_attn_mono.sum(axis=-1).detach()
-                
                 # compute reference styles
                 if multispeaker and epoch >= diff_epoch:
                     ref_ss = model.style_encoder(ref_mels.unsqueeze(1))
@@ -306,8 +324,13 @@ def main(config_path):
             gs = torch.stack(gs).squeeze() # global acoustic styles
             s_trg = torch.cat([gs, s_dur], dim=-1).detach() # ground truth for denoiser
 
-            bert_dur = model.bert(texts, attention_mask=(~text_mask).int())
-            d_en = model.bert_encoder(bert_dur).transpose(-1, -2) 
+            # bert_dur = model.bert(texts, attention_mask=(~text_mask).int())
+            # d_en = model.bert_encoder(bert_dur).transpose(-1, -2) 
+            
+            d_en = model.prosodic_text_encoder(texts, input_lengths, text_mask)
+            d_en_dur = d_en.transpose(-1, -2)
+
+            # pdb.set_trace()
             
             # denoiser training
             if epoch >= diff_epoch:
@@ -319,20 +342,20 @@ def main(config_path):
                     
                 if multispeaker:
                     s_preds = sampler(noise = torch.randn_like(s_trg).unsqueeze(1).to(device), 
-                          embedding=bert_dur,
+                          embedding=d_en_dur,
                           embedding_scale=1,
                                    features=ref, # reference from the same speaker as the embedding
                              embedding_mask_proba=0.1,
                              num_steps=num_steps).squeeze(1)
-                    loss_diff = model.diffusion(s_trg.unsqueeze(1), embedding=bert_dur, features=ref).mean() # EDM loss
+                    loss_diff = model.diffusion(s_trg.unsqueeze(1), embedding=d_en_dur, features=ref).mean() # EDM loss
                     loss_sty = F.l1_loss(s_preds, s_trg.detach()) # style reconstruction loss
                 else:
                     s_preds = sampler(noise = torch.randn_like(s_trg).unsqueeze(1).to(device), 
-                          embedding=bert_dur,
+                          embedding=d_en_dur,
                           embedding_scale=1,
                              embedding_mask_proba=0.1,
                              num_steps=num_steps).squeeze(1)                    
-                    loss_diff = model.diffusion.module.diffusion(s_trg.unsqueeze(1), embedding=bert_dur).mean() # EDM loss
+                    loss_diff = model.diffusion.module.diffusion(s_trg.unsqueeze(1), embedding=d_en_dur).mean() # EDM loss
                     loss_sty = F.l1_loss(s_preds, s_trg.detach()) # style reconstruction loss
             else:
                 loss_sty = 0
@@ -389,6 +412,8 @@ def main(config_path):
                 
                 y_rec_gt = wav.unsqueeze(1)
                 y_rec_gt_pred = model.decoder(en, F0_real, N_real, s)
+                
+                # pdb.set_trace()
 
                 if epoch >= joint_epoch:
                     # ground truth from recording
@@ -456,8 +481,9 @@ def main(config_path):
                 from IPython.core.debugger import set_trace
                 set_trace()
 
-            optimizer.step('bert_encoder')
-            optimizer.step('bert')
+            # optimizer.step('bert_encoder')
+            # optimizer.step('bert')
+            optimizer.step('prosodic_text_encoder')
             optimizer.step('predictor')
             optimizer.step('predictor_encoder')
             
@@ -524,8 +550,9 @@ def main(config_path):
                     if p.grad is not None:
                         p.grad *= slmadv_params.scale
 
-                optimizer.step('bert_encoder')
-                optimizer.step('bert')
+                # optimizer.step('bert_encoder')
+                # optimizer.step('bert')
+                optimizer.step('prosodic_text_encoder')
                 optimizer.step('predictor')
                 optimizer.step('diffusion')
 
@@ -560,6 +587,18 @@ def main(config_path):
                 running_loss = 0
                 
                 print('Time elasped:', time.time()-start_time)
+            
+            if (i+1) % save_interval == 0:
+                print('Saving..')
+                state = {
+                    'net':  {key: model[key].state_dict() for key in model}, 
+                    'optimizer': optimizer.state_dict(),
+                    'iters': iters,
+                    'epoch': epoch,
+                }
+                save_path = osp.join(log_dir, 'epoch_2nd_%05d_batch_%02d_step_%05d.pth' % (epoch, batch_size, i))
+                torch.save(state, save_path)
+                                
                 
         loss_test = 0
         loss_align = 0
@@ -608,8 +647,12 @@ def main(config_path):
                     gs = torch.stack(gs).squeeze()
                     s_trg = torch.cat([s, gs], dim=-1).detach()
 
-                    bert_dur = model.bert(texts, attention_mask=(~text_mask).int())
-                    d_en = model.bert_encoder(bert_dur).transpose(-1, -2) 
+                    # bert_dur = model.bert(texts, attention_mask=(~text_mask).int())
+                    # d_en = model.bert_encoder(bert_dur).transpose(-1, -2) 
+
+                    d_en = model.prosodic_text_encoder(texts, input_lengths, text_mask)
+                    d_en_dur = d_en.transpose(-1, -2)
+
                     d, p = model.predictor(d_en, s, 
                                                         input_lengths, 
                                                         s2s_attn_mono, 
@@ -681,6 +724,8 @@ def main(config_path):
         writer.add_scalar('eval/mel_loss', loss_test / iters_test, epoch + 1)
         writer.add_scalar('eval/dur_loss', loss_align / iters_test, epoch + 1)
         writer.add_scalar('eval/F0_loss', loss_f / iters_test, epoch + 1)
+        attn_image = get_image(s2s_attn_mono[0].cpu().numpy().squeeze())
+        writer.add_figure('eval/attn2', attn_image, epoch)
         
         if epoch < joint_epoch:
             # generating reconstruction examples with GT duration
@@ -726,13 +771,13 @@ def main(config_path):
                 for bib in range(len(d_en)):
                     if multispeaker:
                         s_pred = sampler(noise = torch.randn((1, 256)).unsqueeze(1).to(texts.device), 
-                              embedding=bert_dur[bib].unsqueeze(0),
+                              embedding=d_en_dur[bib].unsqueeze(0),
                               embedding_scale=1,
                                 features=ref_s[bib].unsqueeze(0), # reference from the same speaker as the embedding
                                  num_steps=5).squeeze(1)
                     else:
                         s_pred = sampler(noise = torch.randn((1, 256)).unsqueeze(1).to(texts.device), 
-                              embedding=bert_dur[bib].unsqueeze(0),
+                              embedding=d_en_dur[bib].unsqueeze(0),
                               embedding_scale=1,
                                  num_steps=5).squeeze(1)
 
