@@ -1,1 +1,8 @@
 __pycache__
+*.wav
+*.yml
+*.txt
+*.cleaned
+*.ipynb
+*.TextGrid
+Models/
