@@ -1,6 +1,9 @@
 # UV / Virtual Environment
 .venv/
 
+# Models (downloaded from Hugging Face)
+Models/
+
 # Python
 __pycache__/
 *.py[cod]
