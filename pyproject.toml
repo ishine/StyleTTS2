@@ -44,3 +44,29 @@ explicit = true
 torch = { index = "pytorch-cu121" }
 torchaudio = { index = "pytorch-cu121" }
 monotonic-align = { git = "https://github.com/resemble-ai/monotonic_align.git" }
+
+# Ruff configuration
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+
+[tool.ruff.lint]
+select = [
+    "F",   # Pyflakes
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "I",   # isort
+    "UP",  # pyupgrade
+    "B",   # flake8-bugbear
+    "SIM", # flake8-simplify
+]
+ignore = [
+    "E501",   # line too long (handled by line-length)
+    "B008",   # function call in default argument (common in PyTorch)
+    "UP031",  # percent format (valid Python, low priority)
+    "SIM108", # ternary operator (if-else is more readable)
+    "SIM115", # context manager for open (requires refactoring)
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["Modules", "Utils"]
