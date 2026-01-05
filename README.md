@@ -19,11 +19,11 @@ Online demo: [Hugging Face](https://huggingface.co/spaces/styletts2/styletts2) (
 - [x] Add a finetuning script for new speakers with base pre-trained multispeaker models
 - [ ] Fix DDP (accelerator) for `train_second.py` **(I have tried everything I could to fix this but had no success, so if you are willing to help, please see [#7](https://github.com/yl4579/StyleTTS2/issues/7))**
 
-## Pre-requisites
+## 前提条件
 
-### Installation with uv (Recommended)
+### uvでのインストール（推奨）
 
-1. Install [uv](https://docs.astral.sh/uv/):
+1. [uv](https://docs.astral.sh/uv/)をインストール:
 ```bash
 # Windows (PowerShell)
 powershell -c "irm https://astral.sh/uv/install.ps1 | iex"
@@ -32,37 +32,37 @@ powershell -c "irm https://astral.sh/uv/install.ps1 | iex"
 curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
-2. Clone this repository:
+2. リポジトリをクローン:
 ```bash
 git clone https://github.com/yl4579/StyleTTS2.git
 cd StyleTTS2
 ```
 
-3. Install dependencies (PyTorch with CUDA 12.1 is configured by default):
+3. 依存関係をインストール（デフォルトでPyTorch CUDA 12.1が設定されています）:
 ```bash
 uv sync
 ```
 
-> **Note (Windows)**: Building `monotonic-align` requires Visual Studio Build Tools with C++ workload. Make sure `vswhere.exe` is in your PATH:
+> **注意 (Windows)**: `monotonic-align`のビルドにはC++ワークロード付きのVisual Studio Build Toolsが必要です。`vswhere.exe`がPATHに含まれていることを確認してください:
 > ```bash
 > set PATH=%PATH%;C:\Program Files (x86)\Microsoft Visual Studio\Installer
 > ```
 
-4. (Optional) For inference demos:
+4. （オプション）推論デモ用:
 ```bash
 uv sync --group inference
 
-# Install espeak-ng
-# Windows: Download from https://github.com/espeak-ng/espeak-ng/releases
+# espeak-ngをインストール
+# Windows: https://github.com/espeak-ng/espeak-ng/releases からダウンロード
 # Linux: sudo apt-get install espeak-ng
 ```
 
-### Changing CUDA Version
+### CUDAバージョンの変更
 
-To use a different CUDA version, edit `pyproject.toml`:
+別のCUDAバージョンを使用するには、`pyproject.toml`を編集してください:
 
 ```toml
-# For CUDA 11.8
+# CUDA 11.8の場合
 [[tool.uv.index]]
 name = "pytorch-cu118"
 url = "https://download.pytorch.org/whl/cu118"
@@ -73,12 +73,12 @@ torch = { index = "pytorch-cu118" }
 torchaudio = { index = "pytorch-cu118" }
 ```
 
-Then run `uv sync` again.
+その後、`uv sync`を再実行してください。
 
-### Dataset Preparation
+### データセットの準備
 
-Download and extract the [LJSpeech dataset](https://keithito.com/LJ-Speech-Dataset/), unzip to the data folder and upsample the data to 24 kHz. The text aligner and pitch extractor are pre-trained on 24 kHz data, but you can easily change the preprocessing and re-train them using your own preprocessing.
-For LibriTTS, you will need to combine train-clean-360 with train-clean-100 and rename the folder train-clean-460 (see [val_list_libritts.txt](https://github.com/yl4579/StyleTTS/blob/main/Data/val_list_libritts.txt) as an example).
+[LJSpeechデータセット](https://keithito.com/LJ-Speech-Dataset/)をダウンロードして展開し、dataフォルダに配置して24 kHzにアップサンプリングしてください。テキストアライナーとピッチ抽出器は24 kHzデータで事前学習されていますが、前処理を変更して独自の前処理で再学習することも可能です。
+LibriTTSの場合は、train-clean-360とtrain-clean-100を結合し、フォルダ名をtrain-clean-460に変更する必要があります（例: [val_list_libritts.txt](https://github.com/yl4579/StyleTTS/blob/main/Data/val_list_libritts.txt)を参照）。
 
 ## Training
 First stage training:
