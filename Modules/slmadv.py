@@ -5,7 +5,7 @@ import torch.nn.functional as F
 
 class SLMAdversarialLoss(torch.nn.Module):
     def __init__(self, model, wl, sampler, min_len, max_len, batch_percentage=0.5, skip_update=10, sig=1.5):
-        super(SLMAdversarialLoss, self).__init__()
+        super().__init__()
         self.model = model
         self.wl = wl
         self.sampler = sampler
@@ -63,7 +63,7 @@ class SLMAdversarialLoss(torch.nn.Module):
         attn_preds = []
 
         # differentiable duration modeling
-        for _s2s_pred, _text_length in zip(d, ref_lengths):
+        for _s2s_pred, _text_length in zip(d, ref_lengths, strict=False):
             _s2s_pred_org = _s2s_pred[:_text_length, :]
 
             _s2s_pred = torch.sigmoid(_s2s_pred_org)

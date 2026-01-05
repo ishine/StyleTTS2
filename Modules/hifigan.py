@@ -28,7 +28,7 @@ class AdaIN1d(nn.Module):
 
 class AdaINResBlock1(torch.nn.Module):
     def __init__(self, channels, kernel_size=3, dilation=(1, 3, 5), style_dim=64):
-        super(AdaINResBlock1, self).__init__()
+        super().__init__()
         self.convs1 = nn.ModuleList(
             [
                 weight_norm(
@@ -100,7 +100,9 @@ class AdaINResBlock1(torch.nn.Module):
         self.alpha2 = nn.ParameterList([nn.Parameter(torch.ones(1, channels, 1)) for i in range(len(self.convs2))])
 
     def forward(self, x, s):
-        for c1, c2, n1, n2, a1, a2 in zip(self.convs1, self.convs2, self.adain1, self.adain2, self.alpha1, self.alpha2):
+        for c1, c2, n1, n2, a1, a2 in zip(
+            self.convs1, self.convs2, self.adain1, self.adain2, self.alpha1, self.alpha2, strict=False
+        ):
             xt = n1(x, s)
             xt = xt + (1 / a1) * (torch.sin(a1 * xt) ** 2)  # Snake1D
             xt = c1(xt)
@@ -143,7 +145,7 @@ class SineGen(torch.nn.Module):
         voiced_threshold=0,
         flag_for_pulse=False,
     ):
-        super(SineGen, self).__init__()
+        super().__init__()
         self.sine_amp = sine_amp
         self.noise_std = noise_std
         self.harmonic_num = harmonic_num
@@ -282,7 +284,7 @@ class SourceModuleHnNSF(torch.nn.Module):
     def __init__(
         self, sampling_rate, upsample_scale, harmonic_num=0, sine_amp=0.1, add_noise_std=0.003, voiced_threshod=0
     ):
-        super(SourceModuleHnNSF, self).__init__()
+        super().__init__()
 
         self.sine_amp = sine_amp
         self.noise_std = add_noise_std
@@ -325,7 +327,7 @@ class Generator(torch.nn.Module):
         resblock_dilation_sizes,
         upsample_kernel_sizes,
     ):
-        super(Generator, self).__init__()
+        super().__init__()
         self.num_kernels = len(resblock_kernel_sizes)
         self.num_upsamples = len(upsample_rates)
         resblock = AdaINResBlock1
@@ -339,7 +341,7 @@ class Generator(torch.nn.Module):
         self.ups = nn.ModuleList()
         self.noise_res = nn.ModuleList()
 
-        for i, (u, k) in enumerate(zip(upsample_rates, upsample_kernel_sizes)):
+        for i, (u, k) in enumerate(zip(upsample_rates, upsample_kernel_sizes, strict=False)):
             c_cur = upsample_initial_channel // (2 ** (i + 1))
 
             self.ups.append(
@@ -374,7 +376,7 @@ class Generator(torch.nn.Module):
             ch = upsample_initial_channel // (2 ** (i + 1))
             self.alphas.append(nn.Parameter(torch.ones(1, ch, 1)))
 
-            for j, (k, d) in enumerate(zip(resblock_kernel_sizes, resblock_dilation_sizes)):
+            for _j, (k, d) in enumerate(zip(resblock_kernel_sizes, resblock_dilation_sizes, strict=False)):
                 self.resblocks.append(resblock(ch, k, d, style_dim))
 
         self.conv_post = weight_norm(Conv1d(ch, 1, 7, 1, padding=3))
@@ -484,12 +486,20 @@ class Decoder(nn.Module):
         F0_channel=512,
         style_dim=64,
         dim_out=80,
-        resblock_kernel_sizes=[3, 7, 11],
-        upsample_rates=[10, 5, 3, 2],
+        resblock_kernel_sizes=None,
+        upsample_rates=None,
         upsample_initial_channel=512,
-        resblock_dilation_sizes=[[1, 3, 5], [1, 3, 5], [1, 3, 5]],
-        upsample_kernel_sizes=[20, 10, 6, 4],
+        resblock_dilation_sizes=None,
+        upsample_kernel_sizes=None,
     ):
+        if upsample_kernel_sizes is None:
+            upsample_kernel_sizes = [20, 10, 6, 4]
+        if resblock_dilation_sizes is None:
+            resblock_dilation_sizes = [[1, 3, 5], [1, 3, 5], [1, 3, 5]]
+        if upsample_rates is None:
+            upsample_rates = [10, 5, 3, 2]
+        if resblock_kernel_sizes is None:
+            resblock_kernel_sizes = [3, 7, 11]
         super().__init__()
 
         self.decode = nn.ModuleList()

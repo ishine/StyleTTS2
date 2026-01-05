@@ -1,4 +1,3 @@
-# coding:utf-8
 from functools import reduce
 
 import torch
@@ -6,7 +5,11 @@ from torch.optim import AdamW
 
 
 class MultiOptimizer:
-    def __init__(self, optimizers={}, schedulers={}):
+    def __init__(self, optimizers=None, schedulers=None):
+        if schedulers is None:
+            schedulers = {}
+        if optimizers is None:
+            optimizers = {}
         self.optimizers = optimizers
         self.schedulers = schedulers
         self.keys = list(optimizers.keys())
@@ -21,7 +24,7 @@ class MultiOptimizer:
             try:
                 self.optimizers[key].load_state_dict(val)
             except Exception:
-                print("Unloaded %s" % key)
+                print(f"Unloaded {key}")
 
     def step(self, key=None, scaler=None):
         keys = [key] if key is not None else self.keys

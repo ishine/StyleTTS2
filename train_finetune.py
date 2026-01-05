@@ -138,7 +138,7 @@ def main(config_path):
     if not load_pretrained:
         if config.get("first_stage_path", "") != "":
             first_stage_path = os.path.join(log_dir, config.get("first_stage_path", "first_stage.pth"))
-            print("Loading the first stage model at %s ..." % first_stage_path)
+            print(f"Loading the first stage model at {first_stage_path} ...")
             model, _, start_epoch, iters = load_checkpoint(
                 model,
                 None,
@@ -290,10 +290,7 @@ def main(config_path):
             t_en = model.text_encoder(texts, input_lengths, text_mask)
 
             # 50% of chance of using monotonic version
-            if bool(random.getrandbits(1)):
-                asr = t_en @ s2s_attn
-            else:
-                asr = t_en @ s2s_attn_mono
+            asr = t_en @ s2s_attn if bool(random.getrandbits(1)) else t_en @ s2s_attn_mono
 
             d_gt = s2s_attn_mono.sum(axis=-1).detach()
 
@@ -426,7 +423,7 @@ def main(config_path):
 
             loss_ce = 0
             loss_dur = 0
-            for _s2s_pred, _text_input, _text_length in zip(d, (d_gt), input_lengths):
+            for _s2s_pred, _text_input, _text_length in zip(d, (d_gt), input_lengths, strict=False):
                 _s2s_pred = _s2s_pred[:_text_length, :]
                 _text_input = _text_input[:_text_length].long()
                 _s2s_trg = torch.zeros_like(_s2s_pred)
@@ -441,7 +438,7 @@ def main(config_path):
             loss_dur /= texts.size(0)
 
             loss_s2s = 0
-            for _s2s_pred, _text_input, _text_length in zip(s2s_pred, texts, input_lengths):
+            for _s2s_pred, _text_input, _text_length in zip(s2s_pred, texts, input_lengths, strict=False):
                 loss_s2s += F.cross_entropy(_s2s_pred[:_text_length], _text_input[:_text_length])
             loss_s2s /= texts.size(0)
 
@@ -480,10 +477,7 @@ def main(config_path):
             d_loss_slm, loss_gen_lm = 0, 0
             if epoch >= joint_epoch:
                 # randomly pick whether to use in-distribution text
-                if np.random.rand() < 0.5:
-                    use_ind = True
-                else:
-                    use_ind = False
+                use_ind = np.random.rand() < 0.5
 
                 if use_ind:
                     ref_lengths = input_lengths
@@ -511,7 +505,7 @@ def main(config_path):
 
                     # compute the gradient norm
                     total_norm = {}
-                    for key in model.keys():
+                    for key in model:
                         total_norm[key] = 0
                         parameters = [p for p in model[key].parameters() if p.grad is not None and p.requires_grad]
                         for p in parameters:
@@ -521,7 +515,7 @@ def main(config_path):
 
                     # gradient scaling
                     if total_norm["predictor"] > slmadv_params.thresh:
-                        for key in model.keys():
+                        for key in model:
                             for p in model[key].parameters():
                                 if p.grad is not None:
                                     p.grad *= 1 / total_norm["predictor"]
@@ -601,7 +595,7 @@ def main(config_path):
 
         with torch.no_grad():
             iters_test = 0
-            for batch_idx, batch in enumerate(val_dataloader):
+            for _batch_idx, batch in enumerate(val_dataloader):
                 optimizer.zero_grad()
 
                 try:
@@ -673,7 +667,7 @@ def main(config_path):
                     F0_fake, N_fake = model.predictor.F0Ntrain(p_en, s)
 
                     loss_dur = 0
-                    for _s2s_pred, _text_input, _text_length in zip(d, (d_gt), input_lengths):
+                    for _s2s_pred, _text_input, _text_length in zip(d, (d_gt), input_lengths, strict=False):
                         _s2s_pred = _s2s_pred[:_text_length, :]
                         _text_input = _text_input[:_text_length].long()
                         _s2s_trg = torch.zeros_like(_s2s_pred)
@@ -703,8 +697,7 @@ def main(config_path):
 
         print("Epochs:", epoch + 1)
         logger.info(
-            "Validation loss: %.3f, Dur loss: %.3f, F0 loss: %.3f"
-            % (loss_test / iters_test, loss_align / iters_test, loss_f / iters_test)
+            f"Validation loss: {loss_test / iters_test:.3f}, Dur loss: {loss_align / iters_test:.3f}, F0 loss: {loss_f / iters_test:.3f}"
             + "\n\n\n"
         )
         print("\n\n\n")

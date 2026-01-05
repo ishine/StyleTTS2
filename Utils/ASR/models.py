@@ -73,7 +73,7 @@ class ASRCNN(nn.Module):
 
 class ASRS2S(nn.Module):
     def __init__(self, embedding_dim=256, hidden_dim=512, n_location_filters=32, location_kernel_size=63, n_token=40):
-        super(ASRS2S, self).__init__()
+        super().__init__()
         self.embedding = nn.Embedding(n_token, embedding_dim)
         val_range = math.sqrt(6 / hidden_dim)
         self.embedding.weight.data.uniform_(-val_range, val_range)

@@ -1,4 +1,3 @@
-# coding: utf-8
 import logging
 import os
 import random
@@ -26,7 +25,7 @@ _letters_ipa = (
 symbols = [_pad] + list(_punctuation) + list(_letters) + list(_letters_ipa)
 
 dicts = {}
-for i in range(len((symbols))):
+for i in range(len(symbols)):
     dicts[symbols[i]] = i
 
 
@@ -87,7 +86,7 @@ class FilePathDataset(torch.utils.data.Dataset):
         self.max_mel_length = 192
 
         self.min_length = min_length
-        with open(OOD_data, "r", encoding="utf-8") as f:
+        with open(OOD_data, encoding="utf-8") as f:
             tl = f.readlines()
         idx = 1 if ".wav" in tl[0].split("|")[0] else 0
         self.ptexts = [t.split("|")[idx] for t in tl]
@@ -162,7 +161,7 @@ class FilePathDataset(torch.utils.data.Dataset):
         return mel_tensor, speaker_id
 
 
-class Collater(object):
+class Collater:
     """
     Args:
       adaptive_batch_size (bool): if true, decrease batch size when long data comes.
@@ -188,7 +187,7 @@ class Collater(object):
         max_text_length = max([b[2].shape[0] for b in batch])
         max_rtext_length = max([b[3].shape[0] for b in batch])
 
-        labels = torch.zeros((batch_size)).long()
+        labels = torch.zeros(batch_size).long()
         mels = torch.zeros((batch_size, nmels, max_mel_length)).float()
         texts = torch.zeros((batch_size, max_text_length)).long()
         ref_texts = torch.zeros((batch_size, max_rtext_length)).long()
@@ -197,7 +196,7 @@ class Collater(object):
         ref_lengths = torch.zeros(batch_size).long()
         output_lengths = torch.zeros(batch_size).long()
         ref_mels = torch.zeros((batch_size, nmels, self.max_mel_length)).float()
-        ref_labels = torch.zeros((batch_size)).long()
+        ref_labels = torch.zeros(batch_size).long()
         paths = ["" for _ in range(batch_size)]
         waves = [None for _ in range(batch_size)]
 
@@ -231,9 +230,13 @@ def build_dataloader(
     batch_size=4,
     num_workers=1,
     device="cpu",
-    collate_config={},
-    dataset_config={},
+    collate_config=None,
+    dataset_config=None,
 ):
+    if dataset_config is None:
+        dataset_config = {}
+    if collate_config is None:
+        collate_config = {}
     dataset = FilePathDataset(
         path_list, root_path, OOD_data=OOD_data, min_length=min_length, validation=validation, **dataset_config
     )

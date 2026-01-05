@@ -144,7 +144,7 @@ class JDCNet(nn.Module):
                 nn.init.constant_(m.bias, 0)
         elif isinstance(m, nn.Conv2d):
             nn.init.xavier_normal_(m.weight)
-        elif isinstance(m, nn.LSTM) or isinstance(m, nn.LSTMCell):
+        elif isinstance(m, (nn.LSTM, nn.LSTMCell)):
             for p in m.parameters():
                 if p.data is None:
                     continue
@@ -182,8 +182,5 @@ class ResBlock(nn.Module):
 
     def forward(self, x):
         x = self.pre_conv(x)
-        if self.downsample:
-            x = self.conv(x) + self.conv1by1(x)
-        else:
-            x = self.conv(x) + x
+        x = self.conv(x) + self.conv1by1(x) if self.downsample else self.conv(x) + x
         return x

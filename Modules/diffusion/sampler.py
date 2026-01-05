@@ -1,5 +1,6 @@
+from collections.abc import Callable
 from math import atan, cos, pi, sin, sqrt
-from typing import Any, Callable, List, Optional, Tuple, Type
+from typing import Any
 
 import torch
 import torch.nn as nn
@@ -82,8 +83,8 @@ def clip(x: Tensor, dynamic_threshold: float = 0.0):
 def to_batch(
     batch_size: int,
     device: torch.device,
-    x: Optional[float] = None,
-    xs: Optional[Tensor] = None,
+    x: float | None = None,
+    xs: Tensor | None = None,
 ) -> Tensor:
     assert exists(x) ^ exists(xs), "Either x or xs must be provided"
     # If x provided use the same for all batch items
@@ -101,8 +102,8 @@ class Diffusion(nn.Module):
     def denoise_fn(
         self,
         x_noisy: Tensor,
-        sigmas: Optional[Tensor] = None,
-        sigma: Optional[float] = None,
+        sigmas: Tensor | None = None,
+        sigma: float | None = None,
         **kwargs,
     ) -> Tensor:
         raise NotImplementedError("Diffusion class missing denoise_fn")
@@ -119,7 +120,7 @@ class VDiffusion(Diffusion):
         self.net = net
         self.sigma_distribution = sigma_distribution
 
-    def get_alpha_beta(self, sigmas: Tensor) -> Tuple[Tensor, Tensor]:
+    def get_alpha_beta(self, sigmas: Tensor) -> tuple[Tensor, Tensor]:
         angle = sigmas * pi / 2
         alpha = torch.cos(angle)
         beta = torch.sin(angle)
@@ -128,8 +129,8 @@ class VDiffusion(Diffusion):
     def denoise_fn(
         self,
         x_noisy: Tensor,
-        sigmas: Optional[Tensor] = None,
-        sigma: Optional[float] = None,
+        sigmas: Tensor | None = None,
+        sigma: float | None = None,
         **kwargs,
     ) -> Tensor:
         batch_size, device = x_noisy.shape[0], x_noisy.device
@@ -175,7 +176,7 @@ class KDiffusion(Diffusion):
         self.sigma_distribution = sigma_distribution
         self.dynamic_threshold = dynamic_threshold
 
-    def get_scale_weights(self, sigmas: Tensor) -> Tuple[Tensor, ...]:
+    def get_scale_weights(self, sigmas: Tensor) -> tuple[Tensor, ...]:
         sigma_data = self.sigma_data
         c_noise = torch.log(sigmas) * 0.25
         sigmas = rearrange(sigmas, "b -> b 1 1")
@@ -187,8 +188,8 @@ class KDiffusion(Diffusion):
     def denoise_fn(
         self,
         x_noisy: Tensor,
-        sigmas: Optional[Tensor] = None,
-        sigma: Optional[float] = None,
+        sigmas: Tensor | None = None,
+        sigma: float | None = None,
         **kwargs,
     ) -> Tensor:
         batch_size, device = x_noisy.shape[0], x_noisy.device
@@ -235,7 +236,7 @@ class VKDiffusion(Diffusion):
         self.net = net
         self.sigma_distribution = sigma_distribution
 
-    def get_scale_weights(self, sigmas: Tensor) -> Tuple[Tensor, ...]:
+    def get_scale_weights(self, sigmas: Tensor) -> tuple[Tensor, ...]:
         sigma_data = 1.0
         sigmas = rearrange(sigmas, "b -> b 1 1")
         c_skip = (sigma_data**2) / (sigmas**2 + sigma_data**2)
@@ -252,8 +253,8 @@ class VKDiffusion(Diffusion):
     def denoise_fn(
         self,
         x_noisy: Tensor,
-        sigmas: Optional[Tensor] = None,
-        sigma: Optional[float] = None,
+        sigmas: Tensor | None = None,
+        sigma: float | None = None,
         **kwargs,
     ) -> Tensor:
         batch_size, device = x_noisy.shape[0], x_noisy.device
@@ -331,7 +332,7 @@ class KarrasSchedule(Schedule):
 
 
 class Sampler(nn.Module):
-    diffusion_types: List[Type[Diffusion]] = []
+    diffusion_types: list[type[Diffusion]] = []
 
     def forward(self, noise: Tensor, fn: Callable, sigmas: Tensor, num_steps: int) -> Tensor:
         raise NotImplementedError()
@@ -351,7 +352,7 @@ class Sampler(nn.Module):
 class VSampler(Sampler):
     diffusion_types = [VDiffusion]
 
-    def get_alpha_beta(self, sigma: float) -> Tuple[float, float]:
+    def get_alpha_beta(self, sigma: float) -> tuple[float, float]:
         angle = sigma * pi / 2
         alpha = cos(angle)
         beta = sin(angle)
@@ -435,7 +436,7 @@ class KarrasSampler(Sampler):
 class AEulerSampler(Sampler):
     diffusion_types = [KDiffusion, VKDiffusion]
 
-    def get_sigmas(self, sigma: float, sigma_next: float) -> Tuple[float, float]:
+    def get_sigmas(self, sigma: float, sigma_next: float) -> tuple[float, float]:
         sigma_up = sqrt(sigma_next**2 * (sigma**2 - sigma_next**2) / sigma**2)
         sigma_down = sqrt(sigma_next**2 - sigma_up**2)
         return sigma_up, sigma_down
@@ -468,7 +469,7 @@ class ADPM2Sampler(Sampler):
         super().__init__()
         self.rho = rho
 
-    def get_sigmas(self, sigma: float, sigma_next: float) -> Tuple[float, float, float]:
+    def get_sigmas(self, sigma: float, sigma_next: float) -> tuple[float, float, float]:
         r = self.rho
         sigma_up = sqrt(sigma_next**2 * (sigma**2 - sigma_next**2) / sigma**2)
         sigma_down = sqrt(sigma_next**2 - sigma_up**2)
@@ -533,7 +534,7 @@ class DiffusionSampler(nn.Module):
         *,
         sampler: Sampler,
         sigma_schedule: Schedule,
-        num_steps: Optional[int] = None,
+        num_steps: int | None = None,
         clamp: bool = True,
     ):
         super().__init__()
@@ -549,7 +550,7 @@ class DiffusionSampler(nn.Module):
         message = f"{sampler_class} incompatible with {diffusion_class}"
         assert diffusion.alias in [t.alias for t in sampler.diffusion_types], message
 
-    def forward(self, noise: Tensor, num_steps: Optional[int] = None, **kwargs) -> Tensor:
+    def forward(self, noise: Tensor, num_steps: int | None = None, **kwargs) -> Tensor:
         device = noise.device
         num_steps = default(num_steps, self.num_steps)  # type: ignore
         assert exists(num_steps), "Parameter `num_steps` must be provided"
@@ -620,7 +621,7 @@ class SpanBySpanComposer(nn.Module):
         inpaint[:, :, :half_length] = start[:, :, half_length:]
         inpaint_mask = sequential_mask(like=start, start=half_length)
 
-        for i in range(self.num_spans):
+        for _i in range(self.num_spans):
             # Inpaint second half
             span = self.inpainter(inpaint=inpaint, inpaint_mask=inpaint_mask)
             # Replace first half with generated second half

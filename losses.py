@@ -9,7 +9,7 @@ class SpectralConvergengeLoss(torch.nn.Module):
 
     def __init__(self):
         """Initilize spectral convergence loss module."""
-        super(SpectralConvergengeLoss, self).__init__()
+        super().__init__()
 
     def forward(self, x_mag, y_mag):
         """Calculate forward propagation.
@@ -27,7 +27,7 @@ class STFTLoss(torch.nn.Module):
 
     def __init__(self, fft_size=1024, shift_size=120, win_length=600, window=torch.hann_window):
         """Initialize STFT loss module."""
-        super(STFTLoss, self).__init__()
+        super().__init__()
         self.fft_size = fft_size
         self.shift_size = shift_size
         self.win_length = win_length
@@ -63,9 +63,9 @@ class MultiResolutionSTFTLoss(torch.nn.Module):
 
     def __init__(
         self,
-        fft_sizes=[1024, 2048, 512],
-        hop_sizes=[120, 240, 50],
-        win_lengths=[600, 1200, 240],
+        fft_sizes=None,
+        hop_sizes=None,
+        win_lengths=None,
         window=torch.hann_window,
     ):
         """Initialize Multi resolution STFT loss module.
@@ -75,10 +75,16 @@ class MultiResolutionSTFTLoss(torch.nn.Module):
             win_lengths (list): List of window lengths.
             window (str): Window function type.
         """
-        super(MultiResolutionSTFTLoss, self).__init__()
+        if win_lengths is None:
+            win_lengths = [600, 1200, 240]
+        if hop_sizes is None:
+            hop_sizes = [120, 240, 50]
+        if fft_sizes is None:
+            fft_sizes = [1024, 2048, 512]
+        super().__init__()
         assert len(fft_sizes) == len(hop_sizes) == len(win_lengths)
         self.stft_losses = torch.nn.ModuleList()
-        for fs, ss, wl in zip(fft_sizes, hop_sizes, win_lengths):
+        for fs, ss, wl in zip(fft_sizes, hop_sizes, win_lengths, strict=False):
             self.stft_losses += [STFTLoss(fs, ss, wl, window)]
 
     def forward(self, x, y):
@@ -101,8 +107,8 @@ class MultiResolutionSTFTLoss(torch.nn.Module):
 
 def feature_loss(fmap_r, fmap_g):
     loss = 0
-    for dr, dg in zip(fmap_r, fmap_g):
-        for rl, gl in zip(dr, dg):
+    for dr, dg in zip(fmap_r, fmap_g, strict=False):
+        for rl, gl in zip(dr, dg, strict=False):
             loss += torch.mean(torch.abs(rl - gl))
 
     return loss * 2
@@ -112,7 +118,7 @@ def discriminator_loss(disc_real_outputs, disc_generated_outputs):
     loss = 0
     r_losses = []
     g_losses = []
-    for dr, dg in zip(disc_real_outputs, disc_generated_outputs):
+    for dr, dg in zip(disc_real_outputs, disc_generated_outputs, strict=False):
         r_loss = torch.mean((1 - dr) ** 2)
         g_loss = torch.mean(dg**2)
         loss += r_loss + g_loss
@@ -138,9 +144,9 @@ def generator_loss(disc_outputs):
 
 def discriminator_TPRLS_loss(disc_real_outputs, disc_generated_outputs):
     loss = 0
-    for dr, dg in zip(disc_real_outputs, disc_generated_outputs):
+    for dr, dg in zip(disc_real_outputs, disc_generated_outputs, strict=False):
         tau = 0.04
-        m_DG = torch.median((dr - dg))
+        m_DG = torch.median(dr - dg)
         L_rel = torch.mean((((dr - dg) - m_DG) ** 2)[dr < dg + m_DG])
         loss += tau - F.relu(tau - L_rel)
     return loss
@@ -148,9 +154,9 @@ def discriminator_TPRLS_loss(disc_real_outputs, disc_generated_outputs):
 
 def generator_TPRLS_loss(disc_real_outputs, disc_generated_outputs):
     loss = 0
-    for dg, dr in zip(disc_real_outputs, disc_generated_outputs):
+    for dg, dr in zip(disc_real_outputs, disc_generated_outputs, strict=False):
         tau = 0.04
-        m_DG = torch.median((dr - dg))
+        m_DG = torch.median(dr - dg)
         L_rel = torch.mean((((dr - dg) - m_DG) ** 2)[dr < dg + m_DG])
         loss += tau - F.relu(tau - L_rel)
     return loss
@@ -158,7 +164,7 @@ def generator_TPRLS_loss(disc_real_outputs, disc_generated_outputs):
 
 class GeneratorLoss(torch.nn.Module):
     def __init__(self, mpd, msd):
-        super(GeneratorLoss, self).__init__()
+        super().__init__()
         self.mpd = mpd
         self.msd = msd
 
@@ -179,7 +185,7 @@ class GeneratorLoss(torch.nn.Module):
 
 class DiscriminatorLoss(torch.nn.Module):
     def __init__(self, mpd, msd):
-        super(DiscriminatorLoss, self).__init__()
+        super().__init__()
         self.mpd = mpd
         self.msd = msd
 
@@ -200,7 +206,7 @@ class DiscriminatorLoss(torch.nn.Module):
 
 class WavLMLoss(torch.nn.Module):
     def __init__(self, model, wd, model_sr, slm_sr=16000):
-        super(WavLMLoss, self).__init__()
+        super().__init__()
         self.wavlm = AutoModel.from_pretrained(model)
         self.wd = wd
         self.resample = torchaudio.transforms.Resample(model_sr, slm_sr)
@@ -213,7 +219,7 @@ class WavLMLoss(torch.nn.Module):
         y_rec_embeddings = self.wavlm(input_values=y_rec_16.squeeze(), output_hidden_states=True).hidden_states
 
         floss = 0
-        for er, eg in zip(wav_embeddings, y_rec_embeddings):
+        for er, eg in zip(wav_embeddings, y_rec_embeddings, strict=False):
             floss += torch.mean(torch.abs(er - eg))
 
         return floss.mean()

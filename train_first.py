@@ -132,7 +132,7 @@ def main(config_path):
         lr=float(config["optimizer_params"].get("lr", 1e-4)),
     )
 
-    for k, v in optimizer.optimizers.items():
+    for k, _v in optimizer.optimizers.items():
         optimizer.optimizers[k] = accelerator.prepare(optimizer.optimizers[k])
         optimizer.schedulers[k] = accelerator.prepare(optimizer.schedulers[k])
 
@@ -202,10 +202,7 @@ def main(config_path):
             t_en = model.text_encoder(texts, input_lengths, text_mask)
 
             # 50% of chance of using monotonic version
-            if bool(random.getrandbits(1)):
-                asr = t_en @ s2s_attn
-            else:
-                asr = t_en @ s2s_attn_mono
+            asr = t_en @ s2s_attn if bool(random.getrandbits(1)) else t_en @ s2s_attn_mono
 
             # get clips
             mel_input_length_all = accelerator.gather(mel_input_length)  # for balanced load
@@ -266,7 +263,7 @@ def main(config_path):
 
             if epoch >= TMA_epoch:  # start TMA training
                 loss_s2s = 0
-                for _s2s_pred, _text_input, _text_length in zip(s2s_pred, texts, input_lengths):
+                for _s2s_pred, _text_input, _text_length in zip(s2s_pred, texts, input_lengths, strict=False):
                     loss_s2s += F.cross_entropy(_s2s_pred[:_text_length], _text_input[:_text_length])
                 loss_s2s /= texts.size(0)
 
@@ -339,7 +336,7 @@ def main(config_path):
 
         with torch.no_grad():
             iters_test = 0
-            for batch_idx, batch in enumerate(val_dataloader):
+            for _batch_idx, batch in enumerate(val_dataloader):
                 optimizer.zero_grad()
 
                 waves = batch[0]

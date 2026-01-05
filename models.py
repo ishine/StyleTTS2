@@ -1,4 +1,3 @@
-# coding:utf-8
 import math
 
 import torch
@@ -33,7 +32,7 @@ class LearnedDownSample(nn.Module):
             )
         else:
             raise RuntimeError(
-                "Got unexpected donwsampletype %s, expected is [none, timepreserve, half]" % self.layer_type
+                f"Got unexpected donwsampletype {self.layer_type}, expected is [none, timepreserve, half]"
             )
 
     def forward(self, x):
@@ -56,9 +55,7 @@ class LearnedUpSample(nn.Module):
                 dim_in, dim_in, kernel_size=(3, 3), stride=(2, 2), groups=dim_in, output_padding=1, padding=1
             )
         else:
-            raise RuntimeError(
-                "Got unexpected upsampletype %s, expected is [none, timepreserve, half]" % self.layer_type
-            )
+            raise RuntimeError(f"Got unexpected upsampletype {self.layer_type}, expected is [none, timepreserve, half]")
 
     def forward(self, x):
         return self.conv(x)
@@ -80,7 +77,7 @@ class DownSample(nn.Module):
             return F.avg_pool2d(x, 2)
         else:
             raise RuntimeError(
-                "Got unexpected donwsampletype %s, expected is [none, timepreserve, half]" % self.layer_type
+                f"Got unexpected donwsampletype {self.layer_type}, expected is [none, timepreserve, half]"
             )
 
 
@@ -97,9 +94,7 @@ class UpSample(nn.Module):
         elif self.layer_type == "half":
             return F.interpolate(x, scale_factor=2, mode="nearest")
         else:
-            raise RuntimeError(
-                "Got unexpected upsampletype %s, expected is [none, timepreserve, half]" % self.layer_type
-            )
+            raise RuntimeError(f"Got unexpected upsampletype {self.layer_type}, expected is [none, timepreserve, half]")
 
 
 class ResBlk(nn.Module):
@@ -175,7 +170,7 @@ class StyleEncoder(nn.Module):
 
 class LinearNorm(torch.nn.Module):
     def __init__(self, in_dim, out_dim, bias=True, w_init_gain="linear"):
-        super(LinearNorm, self).__init__()
+        super().__init__()
         self.linear_layer = torch.nn.Linear(in_dim, out_dim, bias=bias)
 
         torch.nn.init.xavier_uniform_(self.linear_layer.weight, gain=torch.nn.init.calculate_gain(w_init_gain))
@@ -190,7 +185,7 @@ class Discriminator2d(nn.Module):
         blocks = []
         blocks += [spectral_norm(nn.Conv2d(1, dim_in, 3, 1, 1))]
 
-        for lid in range(repeat_num):
+        for _lid in range(repeat_num):
             dim_out = min(dim_in * 2, max_conv_dim)
             blocks += [ResBlk(dim_in, dim_out, downsample="half")]
             dim_in = dim_out
@@ -715,7 +710,9 @@ def build_model(args, text_aligner, pitch_extractor, bert):
     return nets
 
 
-def load_checkpoint(model, optimizer, path, load_only_params=True, ignore_modules=[]):
+def load_checkpoint(model, optimizer, path, load_only_params=True, ignore_modules=None):
+    if ignore_modules is None:
+        ignore_modules = []
     state = torch.load(path, map_location="cpu")
     params = state["net"]
 
@@ -731,10 +728,10 @@ def load_checkpoint(model, optimizer, path, load_only_params=True, ignore_module
                 print(
                     f"{key} key length: {len(model[key].state_dict().keys())}, state_dict key length: {len(state_dict.keys())}"
                 )
-                for (k_m, v_m), (k_c, v_c) in zip(model[key].state_dict().items(), state_dict.items()):
+                for (k_m, _v_m), (_k_c, v_c) in zip(model[key].state_dict().items(), state_dict.items(), strict=False):
                     new_state_dict[k_m] = v_c
                 model[key].load_state_dict(new_state_dict, strict=True)
-            print("%s loaded" % key)
+            print(f"{key} loaded")
 
     if not load_only_params:
         epoch = state["epoch"]

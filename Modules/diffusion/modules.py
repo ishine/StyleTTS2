@@ -1,5 +1,4 @@
 from math import log, pi
-from typing import Optional
 
 import torch
 import torch.nn as nn
@@ -49,10 +48,10 @@ class StyleTransformer1d(nn.Module):
         use_context_time: bool = True,
         use_rel_pos: bool = False,
         context_features_multiplier: int = 1,
-        rel_pos_num_buckets: Optional[int] = None,
-        rel_pos_max_distance: Optional[int] = None,
-        context_features: Optional[int] = None,
-        context_embedding_features: Optional[int] = None,
+        rel_pos_num_buckets: int | None = None,
+        rel_pos_max_distance: int | None = None,
+        context_features: int | None = None,
+        context_embedding_features: int | None = None,
         embedding_max_length: int = 512,
     ):
         super().__init__()
@@ -112,7 +111,7 @@ class StyleTransformer1d(nn.Module):
 
         self.fixed_embedding = FixedEmbedding(max_length=embedding_max_length, features=context_embedding_features)
 
-    def get_mapping(self, time: Optional[Tensor] = None, features: Optional[Tensor] = None) -> Optional[Tensor]:
+    def get_mapping(self, time: Tensor | None = None, features: Tensor | None = None) -> Tensor | None:
         """Combines context time features and features into mapping"""
         items, mapping = [], None
         # Compute time features
@@ -153,8 +152,8 @@ class StyleTransformer1d(nn.Module):
         x: Tensor,
         time: Tensor,
         embedding_mask_proba: float = 0.0,
-        embedding: Optional[Tensor] = None,
-        features: Optional[Tensor] = None,
+        embedding: Tensor | None = None,
+        features: Tensor | None = None,
         embedding_scale: float = 1.0,
     ) -> Tensor:
         b, device = embedding.shape[0], embedding.device
@@ -185,9 +184,9 @@ class StyleTransformerBlock(nn.Module):
         style_dim: int,
         multiplier: int,
         use_rel_pos: bool,
-        rel_pos_num_buckets: Optional[int] = None,
-        rel_pos_max_distance: Optional[int] = None,
-        context_features: Optional[int] = None,
+        rel_pos_num_buckets: int | None = None,
+        rel_pos_max_distance: int | None = None,
+        context_features: int | None = None,
     ):
         super().__init__()
 
@@ -217,7 +216,7 @@ class StyleTransformerBlock(nn.Module):
 
         self.feed_forward = FeedForward(features=features, multiplier=multiplier)
 
-    def forward(self, x: Tensor, s: Tensor, *, context: Optional[Tensor] = None) -> Tensor:
+    def forward(self, x: Tensor, s: Tensor, *, context: Tensor | None = None) -> Tensor:
         x = self.attention(x, s) + x
         if self.use_cross_attention:
             x = self.cross_attention(x, s, context=context) + x
@@ -233,10 +232,10 @@ class StyleAttention(nn.Module):
         style_dim: int,
         head_features: int,
         num_heads: int,
-        context_features: Optional[int] = None,
+        context_features: int | None = None,
         use_rel_pos: bool,
-        rel_pos_num_buckets: Optional[int] = None,
-        rel_pos_max_distance: Optional[int] = None,
+        rel_pos_num_buckets: int | None = None,
+        rel_pos_max_distance: int | None = None,
     ):
         super().__init__()
         self.context_features = context_features
@@ -256,7 +255,7 @@ class StyleAttention(nn.Module):
             rel_pos_max_distance=rel_pos_max_distance,
         )
 
-    def forward(self, x: Tensor, s: Tensor, *, context: Optional[Tensor] = None) -> Tensor:
+    def forward(self, x: Tensor, s: Tensor, *, context: Tensor | None = None) -> Tensor:
         assert_message = "You must provide a context when using context_features"
         assert not self.context_features or exists(context), assert_message
         # Use context if provided
@@ -280,10 +279,10 @@ class Transformer1d(nn.Module):
         use_context_time: bool = True,
         use_rel_pos: bool = False,
         context_features_multiplier: int = 1,
-        rel_pos_num_buckets: Optional[int] = None,
-        rel_pos_max_distance: Optional[int] = None,
-        context_features: Optional[int] = None,
-        context_embedding_features: Optional[int] = None,
+        rel_pos_num_buckets: int | None = None,
+        rel_pos_max_distance: int | None = None,
+        context_features: int | None = None,
+        context_embedding_features: int | None = None,
         embedding_max_length: int = 512,
     ):
         super().__init__()
@@ -342,7 +341,7 @@ class Transformer1d(nn.Module):
 
         self.fixed_embedding = FixedEmbedding(max_length=embedding_max_length, features=context_embedding_features)
 
-    def get_mapping(self, time: Optional[Tensor] = None, features: Optional[Tensor] = None) -> Optional[Tensor]:
+    def get_mapping(self, time: Tensor | None = None, features: Tensor | None = None) -> Tensor | None:
         """Combines context time features and features into mapping"""
         items, mapping = [], None
         # Compute time features
@@ -383,8 +382,8 @@ class Transformer1d(nn.Module):
         x: Tensor,
         time: Tensor,
         embedding_mask_proba: float = 0.0,
-        embedding: Optional[Tensor] = None,
-        features: Optional[Tensor] = None,
+        embedding: Tensor | None = None,
+        features: Tensor | None = None,
         embedding_scale: float = 1.0,
     ) -> Tensor:
         b, device = embedding.shape[0], embedding.device
@@ -469,9 +468,9 @@ class AttentionBase(nn.Module):
         head_features: int,
         num_heads: int,
         use_rel_pos: bool,
-        out_features: Optional[int] = None,
-        rel_pos_num_buckets: Optional[int] = None,
-        rel_pos_max_distance: Optional[int] = None,
+        out_features: int | None = None,
+        rel_pos_num_buckets: int | None = None,
+        rel_pos_max_distance: int | None = None,
     ):
         super().__init__()
         self.scale = head_features**-0.5
@@ -513,11 +512,11 @@ class Attention(nn.Module):
         *,
         head_features: int,
         num_heads: int,
-        out_features: Optional[int] = None,
-        context_features: Optional[int] = None,
+        out_features: int | None = None,
+        context_features: int | None = None,
         use_rel_pos: bool,
-        rel_pos_num_buckets: Optional[int] = None,
-        rel_pos_max_distance: Optional[int] = None,
+        rel_pos_num_buckets: int | None = None,
+        rel_pos_max_distance: int | None = None,
     ):
         super().__init__()
         self.context_features = context_features
@@ -539,7 +538,7 @@ class Attention(nn.Module):
             rel_pos_max_distance=rel_pos_max_distance,
         )
 
-    def forward(self, x: Tensor, *, context: Optional[Tensor] = None) -> Tensor:
+    def forward(self, x: Tensor, *, context: Tensor | None = None) -> Tensor:
         assert_message = "You must provide a context when using context_features"
         assert not self.context_features or exists(context), assert_message
         # Use context if provided
@@ -564,9 +563,9 @@ class TransformerBlock(nn.Module):
         head_features: int,
         multiplier: int,
         use_rel_pos: bool,
-        rel_pos_num_buckets: Optional[int] = None,
-        rel_pos_max_distance: Optional[int] = None,
-        context_features: Optional[int] = None,
+        rel_pos_num_buckets: int | None = None,
+        rel_pos_max_distance: int | None = None,
+        context_features: int | None = None,
     ):
         super().__init__()
 
@@ -594,7 +593,7 @@ class TransformerBlock(nn.Module):
 
         self.feed_forward = FeedForward(features=features, multiplier=multiplier)
 
-    def forward(self, x: Tensor, *, context: Optional[Tensor] = None) -> Tensor:
+    def forward(self, x: Tensor, *, context: Tensor | None = None) -> Tensor:
         x = self.attention(x) + x
         if self.use_cross_attention:
             x = self.cross_attention(x, context=context) + x

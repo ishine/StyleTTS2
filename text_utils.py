@@ -11,7 +11,7 @@ _letters_ipa = (
 symbols = [_pad] + list(_punctuation) + list(_letters) + list(_letters_ipa)
 
 dicts = {}
-for i in range(len((symbols))):
+for i in range(len(symbols)):
     dicts[symbols[i]] = i
 
 
