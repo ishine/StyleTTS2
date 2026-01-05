@@ -43,14 +43,12 @@ cd StyleTTS2
 uv sync
 ```
 
-4. Install monotonic-align (requires C++ build tools):
-```bash
-# Windows: Install Visual Studio Build Tools first
-# Linux: sudo apt-get install build-essential
-uv pip install git+https://github.com/resemble-ai/monotonic_align.git
-```
+> **Note (Windows)**: Building `monotonic-align` requires Visual Studio Build Tools with C++ workload. Make sure `vswhere.exe` is in your PATH:
+> ```bash
+> set PATH=%PATH%;C:\Program Files (x86)\Microsoft Visual Studio\Installer
+> ```
 
-5. (Optional) For inference demos:
+4. (Optional) For inference demos:
 ```bash
 uv sync --group inference
 

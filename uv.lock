@@ -1068,6 +1068,14 @@ wheels = [
 ]
 
 [[package]]
+name = "monotonic-align"
+version = "1.2"
+source = { git = "https://github.com/resemble-ai/monotonic_align.git#c6e5e6cb19882164027eb6e35118e841eed9298e" }
+dependencies = [
+    { name = "numpy" },
+]
+
+[[package]]
 name = "mpmath"
 version = "1.3.0"
 source = { registry = "https://pypi.org/simple" }
@@ -2040,6 +2048,7 @@ dependencies = [
     { name = "einops-exts" },
     { name = "librosa" },
     { name = "matplotlib" },
+    { name = "monotonic-align" },
     { name = "munch" },
     { name = "nltk" },
     { name = "pandas" },
@@ -2071,6 +2080,7 @@ requires-dist = [
     { name = "einops-exts", specifier = "==0.0.4" },
     { name = "librosa", specifier = "==0.10.2" },
     { name = "matplotlib", specifier = "==3.8.2" },
+    { name = "monotonic-align", git = "https://github.com/resemble-ai/monotonic_align.git" },
     { name = "munch", specifier = "==4.0.0" },
     { name = "nltk", specifier = "==3.8.1" },
     { name = "pandas", specifier = "==2.2.0" },
