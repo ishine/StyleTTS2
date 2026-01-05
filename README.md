@@ -19,28 +19,66 @@ Online demo: [Hugging Face](https://huggingface.co/spaces/styletts2/styletts2) (
 - [x] Add a finetuning script for new speakers with base pre-trained multispeaker models
 - [ ] Fix DDP (accelerator) for `train_second.py` **(I have tried everything I could to fix this but had no success, so if you are willing to help, please see [#7](https://github.com/yl4579/StyleTTS2/issues/7))**
 
-## Pre-requisites
-1. Python >= 3.7
-2. Clone this repository:
+## 前提条件
+
+### uvでのインストール（推奨）
+
+1. [uv](https://docs.astral.sh/uv/)をインストール:
+```bash
+# Windows (PowerShell)
+powershell -c "irm https://astral.sh/uv/install.ps1 | iex"
+
+# Linux/macOS
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+2. リポジトリをクローン:
 ```bash
 git clone https://github.com/yl4579/StyleTTS2.git
 cd StyleTTS2
 ```
-3. Install python requirements: 
+
+3. 依存関係をインストール（デフォルトでPyTorch CUDA 12.1が設定されています）:
 ```bash
-pip install -r requirements.txt
+uv sync
 ```
-On Windows add:
+
+> **注意 (Windows)**: `monotonic-align`のビルドにはC++ワークロード付きのVisual Studio Build Toolsが必要です。`vswhere.exe`がPATHに含まれていることを確認してください:
+> ```bash
+> set PATH=%PATH%;C:\Program Files (x86)\Microsoft Visual Studio\Installer
+> ```
+
+4. （オプション）推論デモ用:
 ```bash
-pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118 -U
+uv sync --group inference
+
+# espeak-ngをインストール
+# Windows: https://github.com/espeak-ng/espeak-ng/releases からダウンロード
+# Linux: sudo apt-get install espeak-ng
 ```
-Also install phonemizer and espeak if you want to run the demo:
-```bash
-pip install phonemizer
-sudo apt-get install espeak-ng
+
+### CUDAバージョンの変更
+
+別のCUDAバージョンを使用するには、`pyproject.toml`を編集してください:
+
+```toml
+# CUDA 11.8の場合
+[[tool.uv.index]]
+name = "pytorch-cu118"
+url = "https://download.pytorch.org/whl/cu118"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-cu118" }
+torchaudio = { index = "pytorch-cu118" }
 ```
-4. Download and extract the [LJSpeech dataset](https://keithito.com/LJ-Speech-Dataset/), unzip to the data folder and upsample the data to 24 kHz. The text aligner and pitch extractor are pre-trained on 24 kHz data, but you can easily change the preprocessing and re-train them using your own preprocessing. 
-For LibriTTS, you will need to combine train-clean-360 with train-clean-100 and rename the folder train-clean-460 (see [val_list_libritts.txt](https://github.com/yl4579/StyleTTS/blob/main/Data/val_list_libritts.txt) as an example).
+
+その後、`uv sync`を再実行してください。
+
+### データセットの準備
+
+[LJSpeechデータセット](https://keithito.com/LJ-Speech-Dataset/)をダウンロードして展開し、dataフォルダに配置して24 kHzにアップサンプリングしてください。テキストアライナーとピッチ抽出器は24 kHzデータで事前学習されていますが、前処理を変更して独自の前処理で再学習することも可能です。
+LibriTTSの場合は、train-clean-360とtrain-clean-100を結合し、フォルダ名をtrain-clean-460に変更する必要があります（例: [val_list_libritts.txt](https://github.com/yl4579/StyleTTS/blob/main/Data/val_list_libritts.txt)を参照）。
 
 ## Training
 First stage training:
