@@ -20,26 +20,66 @@ Online demo: [Hugging Face](https://huggingface.co/spaces/styletts2/styletts2) (
 - [ ] Fix DDP (accelerator) for `train_second.py` **(I have tried everything I could to fix this but had no success, so if you are willing to help, please see [#7](https://github.com/yl4579/StyleTTS2/issues/7))**
 
 ## Pre-requisites
-1. Python >= 3.7
+
+### Installation with uv (Recommended)
+
+1. Install [uv](https://docs.astral.sh/uv/):
+```bash
+# Windows (PowerShell)
+powershell -c "irm https://astral.sh/uv/install.ps1 | iex"
+
+# Linux/macOS
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
 2. Clone this repository:
 ```bash
 git clone https://github.com/yl4579/StyleTTS2.git
 cd StyleTTS2
 ```
-3. Install python requirements: 
+
+3. Install dependencies (PyTorch with CUDA 12.1 is configured by default):
 ```bash
-pip install -r requirements.txt
+uv sync
 ```
-On Windows add:
+
+4. Install monotonic-align (requires C++ build tools):
 ```bash
-pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118 -U
+# Windows: Install Visual Studio Build Tools first
+# Linux: sudo apt-get install build-essential
+uv pip install git+https://github.com/resemble-ai/monotonic_align.git
 ```
-Also install phonemizer and espeak if you want to run the demo:
+
+5. (Optional) For inference demos:
 ```bash
-pip install phonemizer
-sudo apt-get install espeak-ng
+uv sync --group inference
+
+# Install espeak-ng
+# Windows: Download from https://github.com/espeak-ng/espeak-ng/releases
+# Linux: sudo apt-get install espeak-ng
 ```
-4. Download and extract the [LJSpeech dataset](https://keithito.com/LJ-Speech-Dataset/), unzip to the data folder and upsample the data to 24 kHz. The text aligner and pitch extractor are pre-trained on 24 kHz data, but you can easily change the preprocessing and re-train them using your own preprocessing. 
+
+### Changing CUDA Version
+
+To use a different CUDA version, edit `pyproject.toml`:
+
+```toml
+# For CUDA 11.8
+[[tool.uv.index]]
+name = "pytorch-cu118"
+url = "https://download.pytorch.org/whl/cu118"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-cu118" }
+torchaudio = { index = "pytorch-cu118" }
+```
+
+Then run `uv sync` again.
+
+### Dataset Preparation
+
+Download and extract the [LJSpeech dataset](https://keithito.com/LJ-Speech-Dataset/), unzip to the data folder and upsample the data to 24 kHz. The text aligner and pitch extractor are pre-trained on 24 kHz data, but you can easily change the preprocessing and re-train them using your own preprocessing.
 For LibriTTS, you will need to combine train-clean-360 with train-clean-100 and rename the folder train-clean-460 (see [val_list_libritts.txt](https://github.com/yl4579/StyleTTS/blob/main/Data/val_list_libritts.txt) as an example).
 
 ## Training
