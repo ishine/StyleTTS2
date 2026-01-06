@@ -4,13 +4,16 @@ Kum et al. - "Joint Detection and Classification of Singing Voice Melody Using
 Convolutional Recurrent Neural Networks" (2019)
 Link: https://www.semanticscholar.org/paper/Joint-Detection-and-Classification-of-Singing-Voice-Kum-Nam/60a2ad4c7db43bace75805054603747fcd062c0d
 """
+
 import torch
 from torch import nn
-        
+
+
 class JDCNet(nn.Module):
     """
     Joint Detection and Classification Network model for singing voice melody.
     """
+
     def __init__(self, num_class=722, seq_len=31, leaky_relu_slope=0.01):
         super().__init__()
         self.num_class = num_class
@@ -54,13 +57,13 @@ class JDCNet(nn.Module):
 
         # input: (b, 31, 512) - resized from (b, 256, 31, 2)
         self.bilstm_classifier = nn.LSTM(
-            input_size=512, hidden_size=256,
-            batch_first=True, bidirectional=True)  # (b, 31, 512)
+            input_size=512, hidden_size=256, batch_first=True, bidirectional=True
+        )  # (b, 31, 512)
 
         # input: (b, 31, 512) - resized from (b, 256, 31, 2)
         self.bilstm_detector = nn.LSTM(
-            input_size=512, hidden_size=256,
-            batch_first=True, bidirectional=True)  # (b, 31, 512)
+            input_size=512, hidden_size=256, batch_first=True, bidirectional=True
+        )  # (b, 31, 512)
 
         # input: (b * 31, 512)
         self.classifier = nn.Linear(in_features=512, out_features=self.num_class)  # (b * 31, num_class)
@@ -72,33 +75,31 @@ class JDCNet(nn.Module):
         self.apply(self.init_weights)
 
     def get_feature_GAN(self, x):
-        seq_len = x.shape[-2]
         x = x.float().transpose(-1, -2)
-        
+
         convblock_out = self.conv_block(x)
-        
+
         resblock1_out = self.res_block1(convblock_out)
         resblock2_out = self.res_block2(resblock1_out)
         resblock3_out = self.res_block3(resblock2_out)
         poolblock_out = self.pool_block[0](resblock3_out)
         poolblock_out = self.pool_block[1](poolblock_out)
-        
+
         return poolblock_out.transpose(-1, -2)
-        
+
     def get_feature(self, x):
-        seq_len = x.shape[-2]
         x = x.float().transpose(-1, -2)
-        
+
         convblock_out = self.conv_block(x)
-        
+
         resblock1_out = self.res_block1(convblock_out)
         resblock2_out = self.res_block2(resblock1_out)
         resblock3_out = self.res_block3(resblock2_out)
         poolblock_out = self.pool_block[0](resblock3_out)
         poolblock_out = self.pool_block[1](poolblock_out)
-        
+
         return self.pool_block[2](poolblock_out)
-        
+
     def forward(self, x):
         """
         Returns:
@@ -110,19 +111,18 @@ class JDCNet(nn.Module):
         ###############################
         seq_len = x.shape[-1]
         x = x.float().transpose(-1, -2)
-        
+
         convblock_out = self.conv_block(x)
-        
+
         resblock1_out = self.res_block1(convblock_out)
         resblock2_out = self.res_block2(resblock1_out)
         resblock3_out = self.res_block3(resblock2_out)
-        
-        
+
         poolblock_out = self.pool_block[0](resblock3_out)
         poolblock_out = self.pool_block[1](poolblock_out)
         GAN_feature = poolblock_out.transpose(-1, -2)
         poolblock_out = self.pool_block[2](poolblock_out)
-        
+
         # (b, 256, 31, 2) => (b, 31, 256, 2) => (b, 31, 512)
         classifier_out = poolblock_out.permute(0, 2, 1, 3).contiguous().view((-1, seq_len, 512))
         classifier_out, _ = self.bilstm_classifier(classifier_out)  # ignore the hidden states
@@ -130,7 +130,7 @@ class JDCNet(nn.Module):
         classifier_out = classifier_out.contiguous().view((-1, 512))  # (b * 31, 512)
         classifier_out = self.classifier(classifier_out)
         classifier_out = classifier_out.view((-1, seq_len, self.num_class))  # (b, 31, num_class)
-        
+
         # sizes: (b, 31, 722), (b, 31, 2)
         # classifier output consists of predicted pitch classes per frame
         # detector output consists of: (isvoice, notvoice) estimates per frame
@@ -144,7 +144,7 @@ class JDCNet(nn.Module):
                 nn.init.constant_(m.bias, 0)
         elif isinstance(m, nn.Conv2d):
             nn.init.xavier_normal_(m.weight)
-        elif isinstance(m, nn.LSTM) or isinstance(m, nn.LSTMCell):
+        elif isinstance(m, (nn.LSTM, nn.LSTMCell)):
             for p in m.parameters():
                 if p.data is None:
                     continue
@@ -153,7 +153,7 @@ class JDCNet(nn.Module):
                     nn.init.orthogonal_(p.data)
                 else:
                     nn.init.normal_(p.data)
-                    
+
 
 class ResBlock(nn.Module):
     def __init__(self, in_channels: int, out_channels: int, leaky_relu_slope=0.01):
@@ -169,8 +169,7 @@ class ResBlock(nn.Module):
 
         # conv layers
         self.conv = nn.Sequential(
-            nn.Conv2d(in_channels=in_channels, out_channels=out_channels,
-                      kernel_size=3, padding=1, bias=False),
+            nn.Conv2d(in_channels=in_channels, out_channels=out_channels, kernel_size=3, padding=1, bias=False),
             nn.BatchNorm2d(out_channels),
             nn.LeakyReLU(leaky_relu_slope, inplace=True),
             nn.Conv2d(out_channels, out_channels, 3, padding=1, bias=False),
@@ -183,8 +182,5 @@ class ResBlock(nn.Module):
 
     def forward(self, x):
         x = self.pre_conv(x)
-        if self.downsample:
-            x = self.conv(x) + self.conv1by1(x)
-        else:
-            x = self.conv(x) + x
+        x = self.conv(x) + self.conv1by1(x) if self.downsample else self.conv(x) + x
         return x

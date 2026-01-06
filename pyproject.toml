@@ -1,0 +1,79 @@
+[project]
+name = "styletts2"
+version = "0.1.0"
+description = "StyleTTS 2: Human-Level Text-to-Speech through Style Diffusion and Adversarial Training with Large Speech Language Models"
+readme = "README.md"
+requires-python = "==3.11.*"
+dependencies = [
+    "accelerate==0.26.1",
+    "click==8.1.7",
+    "einops==0.7.0",
+    "einops-exts==0.0.4",
+    "librosa==0.10.2",
+    "matplotlib==3.8.2",
+    "monotonic-align",
+    "munch==4.0.0",
+    "nltk==3.8.1",
+    "pandas==2.2.0",
+    "pydub==0.25.1",
+    "pyyaml==6.0.1",
+    "soundfile==0.12.1",
+    "tensorboard>=2.20.0",
+    "torch==2.2.0",
+    "torchaudio==2.2.0",
+    "tqdm==4.66.1",
+    "transformers==4.37.2",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.2",
+    "pyopenjtalk-plus>=0.4.0",
+    "ruff>=0.14.10",
+]
+inference = [
+    "jupyter>=1.1.1",
+    "phonemizer>=3.3.0",
+    "pyopenjtalk-plus>=0.4.0",
+]
+
+# PyTorch CUDA 12.1 index configuration
+[[tool.uv.index]]
+name = "pytorch-cu121"
+url = "https://download.pytorch.org/whl/cu121"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-cu121" }
+torchaudio = { index = "pytorch-cu121" }
+monotonic-align = { git = "https://github.com/resemble-ai/monotonic_align.git" }
+
+# Ruff configuration
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+
+[tool.ruff.lint]
+select = [
+    "F",   # Pyflakes
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "I",   # isort
+    "UP",  # pyupgrade
+    "B",   # flake8-bugbear
+    "SIM", # flake8-simplify
+]
+ignore = [
+    "E501",   # line too long (handled by line-length)
+    "B008",   # function call in default argument (common in PyTorch)
+    "UP031",  # percent format (valid Python, low priority)
+    "SIM108", # ternary operator (if-else is more readable)
+    "SIM115", # context manager for open (requires refactoring)
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["Modules", "Utils"]
+
+# Pytest configuration
+[tool.pytest.ini_options]
+testpaths = ["tests"]
