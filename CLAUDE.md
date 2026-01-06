@@ -10,10 +10,11 @@ StyleTTS2は、スタイル拡散とSLM（Speech Language Model）敵対的学�
 
 ### 環境セットアップ
 ```bash
-pip install -r requirements.txt
-# 音素変換用（デモ実行時に必要）
-pip install phonemizer
-sudo apt-get install espeak-ng
+uv sync
+# 推論用（日本語対応含む）
+uv sync --group inference
+# 開発用
+uv sync --group dev
 ```
 
 ### トレーニング
@@ -26,6 +27,13 @@ python train_second.py --config_path ./Configs/config.yml
 
 # ファインチューニング（accelerate版）
 accelerate launch --mixed_precision=fp16 --num_processes=1 train_finetune_accelerate.py --config_path ./Configs/config_ft.yml
+```
+
+### テスト
+```bash
+uv run pytest
+uv run ruff check .
+uv run ruff format --check .
 ```
 
 ## アーキテクチャ
@@ -58,6 +66,7 @@ optimizers.py      - MultiOptimizer（OneCycleLRスケジューラ付き）
 - `Configs/config.yml` - 単一話者（LJSpeech）
 - `Configs/config_libritts.yml` - 複数話者（LibriTTS）
 - `Configs/config_ft.yml` - ファインチューニング用
+- `Configs/config_japanese.yml` - 日本語（多言語PL-BERT使用）
 
 ### 重要なハイパーパラメータ
 - `batch_size`: 安定性のため16以上を推奨
@@ -78,6 +87,45 @@ filename.wav|transcription|speaker
 デモノートブック:
 - `Demo/Inference_LJSpeech.ipynb` - 単一話者
 - `Demo/Inference_LibriTTS.ipynb` - 複数話者（ゼロショット話者適応）
+
+## 日本語対応
+
+### 日本語G2P (`japanese_g2p.py`)
+pyopenjtalk-plusを使用した日本語テキスト→IPA音素変換モジュール。
+
+```python
+from japanese_g2p import japanese_to_ipa
+
+# 基本変換
+japanese_to_ipa("こんにちは")
+# → 'k o ɴ n i tɕ i w a'
+
+# アクセント句境界とピッチアクセント付き
+japanese_to_ipa("今日は天気がいいです")
+# → 'kʲ oː ↓ w a # t e ↓ ɴ k i ɡ a # iː ↓ d e s ɯ'
+```
+
+#### 韻律機能
+| 機能 | 記号 | パラメータ |
+|------|------|-----------|
+| ピッチアクセント | ↑↓ | `include_accent` |
+| アクセント句境界 | # | `include_phrase_boundary` |
+| 疑問形判定 | ? | `include_question_marker` |
+| ポーズ保持 | _ | `preserve_pause` |
+
+### データ準備スクリプト
+```bash
+python scripts/prepare_japanese_data.py --input_dir /path/to/dataset --output_dir Data
+```
+
+### 日本語学習
+```bash
+# 多言語PL-BERTをダウンロード
+# https://huggingface.co/papercup-ai/multilingual-pl-bert から Utils/PLBERT_multilingual/ に配置
+
+# 日本語設定で学習
+accelerate launch train_first.py --config_path ./Configs/config_japanese.yml
+```
 
 ## 既知の制限事項
 
