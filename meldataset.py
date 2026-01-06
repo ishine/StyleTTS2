@@ -15,7 +15,7 @@ logger.setLevel(logging.DEBUG)
 
 
 _pad = "$"
-_punctuation = ';:,.!?¡¿—…"«»“” '
+_punctuation = ';:,.!?¡¿—…"«»"" #_'
 _letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
 _letters_ipa = (
     "ɑɐɒæɓʙβɔɕçɗɖðʤəɘɚɛɜɝɞɟʄɡɠɢʛɦɧħɥʜɨɪʝɭɬɫɮʟɱɯɰŋɳɲɴøɵɸθœɶʘɹɺɾɻʀʁɽʂʃʈʧʉʊʋⱱʌɣɤʍχʎʏʑʐʒʔʡʕʢǀǁǂǃˈˌːˑʼʴʰʱʲʷˠˤ˞↓↑→↗↘'̩'ᵻ"
@@ -39,7 +39,7 @@ class TextCleaner:
             try:
                 indexes.append(self.word_index_dictionary[char])
             except KeyError:
-                print(text)
+                logger.warning(f"Unknown character: {repr(char)}")
         return indexes
 
 
@@ -89,7 +89,7 @@ class FilePathDataset(torch.utils.data.Dataset):
         with open(OOD_data, encoding="utf-8") as f:
             tl = f.readlines()
         idx = 1 if ".wav" in tl[0].split("|")[0] else 0
-        self.ptexts = [t.split("|")[idx] for t in tl]
+        self.ptexts = [t.strip().split("|")[idx].strip() for t in tl if t.strip()]
 
         self.root_path = root_path
 

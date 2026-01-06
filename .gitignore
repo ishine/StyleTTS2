@@ -22,3 +22,13 @@ build/
 # OS
 .DS_Store
 Thumbs.db
+
+# Data (generated during training)
+Data/
+
+# Multilingual PL-BERT (downloaded from HuggingFace)
+Utils/PLBERT_multilingual/
+
+# Test outputs
+test_output.wav
+nul
