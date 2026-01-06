@@ -21,14 +21,14 @@ class TestSymbols:
             assert char in symbols
 
     def test_symbols_count(self):
-        # symbols list has 178 items (with 1 duplicate due to overlapping chars)
-        assert len(symbols) == 178
+        # symbols list has 180 items (with 3 duplicates due to overlapping chars: " x3, ' x2)
+        assert len(symbols) == 180
 
 
 class TestDicts:
     def test_dicts_has_unique_symbols(self):
         # dicts is a dictionary, so it only contains unique keys
-        # symbols has 178 items with 1 duplicate, so dicts has 177
+        # symbols has 180 items with 3 duplicates, so dicts has 177
         assert len(dicts) == 177
 
     def test_pad_is_index_zero(self):

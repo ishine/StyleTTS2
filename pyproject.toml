@@ -27,11 +27,13 @@ dependencies = [
 [dependency-groups]
 dev = [
     "pytest>=9.0.2",
+    "pyopenjtalk-plus>=0.4.0",
     "ruff>=0.14.10",
 ]
 inference = [
     "jupyter>=1.1.1",
     "phonemizer>=3.3.0",
+    "pyopenjtalk-plus>=0.4.0",
 ]
 
 # PyTorch CUDA 12.1 index configuration
