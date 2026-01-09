@@ -19,7 +19,7 @@ from Modules.diffusion.sampler import KDiffusion, LogNormalDistribution
 from Modules.diffusion.modules import Transformer1d, StyleTransformer1d
 from Modules.diffusion.diffusion import AudioDiffusionConditional
 
-from Modules.discriminators import MultiPeriodDiscriminator, MultiResSpecDiscriminator, WavLMDiscriminator
+from Modules.discriminators import MultiPeriodDiscriminator, MultiResSpecDiscriminator, WavLMDiscriminator, WisperDiscriminator
 
 from munch import Munch
 import yaml
@@ -585,7 +585,7 @@ def load_F0_models(path):
     # load F0 model
 
     F0_model = JDCNet(num_class=1, seq_len=192)
-    params = torch.load(path, map_location='cpu')['net']
+    params = torch.load(path, map_location='cpu', weights_only=False)['net']
     F0_model.load_state_dict(params)
     _ = F0_model.train()
     
@@ -601,7 +601,7 @@ def load_ASR_models(ASR_MODEL_PATH, ASR_MODEL_CONFIG):
 
     def _load_model(model_config, model_path):
         model = ASRCNN(**model_config)
-        params = torch.load(model_path, map_location='cpu')['model']
+        params = torch.load(model_path, map_location='cpu', weights_only=False)['model']
         model.load_state_dict(params)
         return model
 
@@ -638,6 +638,14 @@ def build_model(args, text_aligner, pitch_extractor, bert):
     
     style_encoder = StyleEncoder(dim_in=args.dim_in, style_dim=args.style_dim, max_conv_dim=args.hidden_dim) # acoustic style encoder
     predictor_encoder = StyleEncoder(dim_in=args.dim_in, style_dim=args.style_dim, max_conv_dim=args.hidden_dim) # prosodic style encoder
+
+    slm_model = args.slm_model
+    print("alm model from models", slm_model)
+    if slm_model == "wavlm":
+        wd = WavLMDiscriminator(args.slm.hidden, args.slm.nlayers, args.slm.initial_channel)
+    elif slm_model == "wisper":
+        wd = WisperDiscriminator(args.wisper.hidden, args.wisper.nlayers, args.wisper.initial_channel)
+
         
     # define diffusion model
     if args.multispeaker:
@@ -688,20 +696,49 @@ def build_model(args, text_aligner, pitch_extractor, bert):
             msd = MultiResSpecDiscriminator(),
         
             # slm discriminator head
-            wd = WavLMDiscriminator(args.slm.hidden, args.slm.nlayers, args.slm.initial_channel),
+            wd = wd
        )
     
     return nets
 
+# def load_checkpoint(model, optimizer, path, load_only_params=True, ignore_modules=[]):
+#     state = torch.load(path, map_location='cpu')
+#     params = state['net']
+#     for key in model:
+#         if key in params and key not in ignore_modules:
+#             print('%s loaded' % key)
+#             model[key].load_state_dict(params[key], strict=False)
+#     _ = [model[key].eval() for key in model]
+    
+#     if not load_only_params:
+#         epoch = state["epoch"]
+#         iters = state["iters"]
+#         optimizer.load_state_dict(state["optimizer"])
+#     else:
+#         epoch = 0
+#         iters = 0
+        
+#     return model, optimizer, epoch, iters
+
 def load_checkpoint(model, optimizer, path, load_only_params=True, ignore_modules=[]):
-    state = torch.load(path, map_location='cpu')
+    state = torch.load(path, map_location='cpu', weights_only=False)
     params = state['net']
+
     for key in model:
         if key in params and key not in ignore_modules:
             print('%s loaded' % key)
-            model[key].load_state_dict(params[key], strict=False)
+            try:
+                model[key].load_state_dict(params[key], strict=True)
+            except:
+                from collections import OrderedDict
+                state_dict = params[key]
+                new_state_dict = OrderedDict()
+                print(f'{key} key length: {len(model[key].state_dict().keys())}, state_dict length: {len(state_dict.keys())}')
+                for (k_m, v_m), (k_c, v_c) in zip(model[key].state_dict().items(), state_dict.items()):
+                    new_state_dict[k_m] = v_c
+                model[key].load_state_dict(new_state_dict, strict=True)
     _ = [model[key].eval() for key in model]
-    
+
     if not load_only_params:
         epoch = state["epoch"]
         iters = state["iters"]
@@ -709,5 +746,5 @@ def load_checkpoint(model, optimizer, path, load_only_params=True, ignore_module
     else:
         epoch = 0
         iters = 0
-        
+
     return model, optimizer, epoch, iters

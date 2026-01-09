@@ -1,13 +1,13 @@
-log_dir: "Models/LJSpeech"
-first_stage_path: "first_stage.pth"
-save_freq: 2
+log_dir: "/home/aiadmin/Noha/StyleTTS/logs"
+first_stage_path: "/home/aiadmin/Noha/StyleTTS/logs/exp_6_epoch_1st_00110.pth"
+save_freq: 5
 log_interval: 10
 device: "cuda"
 epochs_1st: 200 # number of epochs for first stage training (pre-training)
 epochs_2nd: 100 # number of peochs for second stage training (joint training)
-batch_size: 16
+batch_size: 4
 max_len: 400 # maximum number of frames
-pretrained_model: ""
+pretrained_model: ''
 second_stage_load_pretrained: true # set to true if the pre-trained model is for 2nd stage
 load_only_params: false # set to true if do not want to load epoch numbers and optimizer parameters
 
@@ -17,10 +17,10 @@ ASR_path: "Utils/ASR/epoch_00080.pth"
 PLBERT_dir: 'Utils/PLBERT/'
 
 data_params:
-  train_data: "Data/train_list.txt"
-  val_data: "Data/val_list.txt"
-  root_path: "/local/LJSpeech-1.1/wavs"
-  OOD_data: "Data/OOD_texts.txt"
+  train_data: "/home/aiadmin/Noha/StyleTTS/Clean_data/train.txt"
+  val_data: "/home/aiadmin/Noha/StyleTTS/Clean_data/test.txt"
+  root_path: "/home/aiadmin/Noha/StyleTTS/Clean_data/wav"
+  OOD_data: "/home/aiadmin/Noha/StyleTTS/Clean_data/OOD.txt"
   min_length: 50 # sample until texts with this size are obtained for OOD texts
 
 preprocess_params:
@@ -32,6 +32,8 @@ preprocess_params:
 
 model_params:
   multispeaker: false
+  #slm_model: "wavlm"
+  slm_model: "wisper"
 
   dim_in: 64 
   hidden_dim: 512
@@ -62,6 +64,13 @@ model_params:
       sr: 16000 # sampling rate of SLM
       hidden: 768 # hidden size of SLM
       nlayers: 13 # number of layers of SLM
+      initial_channel: 64 # initial channels of SLM discriminator head
+  
+  wisper:
+      model: "openai/whisper-base"
+      sr: 16000 # sampling rate of SLM
+      hidden: 1500 # hidden size of SLM
+      nlayers: 512 # number of layers of SLM
       initial_channel: 64 # initial channels of SLM discriminator head
   
   # style diffusion model config
